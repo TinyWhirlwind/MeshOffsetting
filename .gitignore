@@ -1,41 +1,33 @@
-# Prerequisites
-*.d
+# Visual Studio
+.vs/
+*.VC.db
+*.VC.opendb
 
-# Compiled Object files
-*.slo
-*.lo
-*.o
+# Build results
+Debug/
+Release/
+x64/
+x86/
+out/
+build/
+
+# Intermediate files
 *.obj
-
-# Precompiled Headers
-*.gch
 *.pch
-
-# Linker files
-*.ilk
-
-# Debugger Files
 *.pdb
-
-# Compiled Dynamic libraries
-*.so
-*.dylib
-*.dll
-
-# Fortran module files
-*.mod
-*.smod
-
-# Compiled Static libraries
-*.lai
-*.la
-*.a
-*.lib
+*.ilk
+*.log
+*.ipch
 
 # Executables
 *.exe
-*.out
-*.app
+*.dll
 
-# debug information files
-*.dwo
+# CMake (如果用)
+CMakeFiles/
+CMakeCache.txt
+cmake-build-*/
+
+# Other
+*.user
+*.suo
