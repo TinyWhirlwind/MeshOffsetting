@@ -8,7 +8,7 @@
 #include <list>
 #include <memory_resource>
 #include <span>
-using Allocator = std::pmr::polymorphic_allocator<std::byte>;
+class AABBBox;
 enum SplitMethod
 {
     SAH = 0, 
@@ -16,13 +16,6 @@ enum SplitMethod
     Middle, 
     EqualCounts,
 };
-
-//enum QueryType
-//{
-//    None = 1,
-//    AABB,
-//    Sphere,
-//};
 template <class Primitive>
 class BVH
 {
@@ -42,14 +35,27 @@ public:
     class BVHNode
     {
     public:
-        BVHNode* leftNode;
-        BVHNode* rightNode;
-        unsigned int dim
+        BVHNode* childNode[2];
+        AABBBox bound;
+        unsigned int splitAxis;
         unsigned int childCount;
+        unsigned int firstPrimOffset;
 
         void InitLeaf(int first, int n, const AABBBox& b)
         {
-
+            firstPrimOffset = first;
+            childCount = n;//?
+            bound = b;
+            child[0] = nullPtr;
+            child[1] = nullPtr;
+        }
+        void InitInterior(unsigned int axis, BVHNode* l, BVHNode* cr)
+        {
+            childNode[0] = cl;
+            childNode[1] = cr;
+            splitAxis = axis;
+            childCount = 0;
+            bound = cr->bound.Merge(cl->bound)
         }
 
     };
@@ -120,9 +126,15 @@ private:
     {
     }
 
-    BVHNode* buildBVH(std::span<BVHPrimitive> boxList, std::atomic<int>* totalNodes, std::atomic<int>* orderedPrimsOffset, std::vector<Primitive> orderedBoxs)
+    BVHNode* buildBVH(std::span<BVHPrimitive> primitives, std::atomic<int>* totalNodes, std::atomic<int>* orderedPrimsOffset, std::vector<Primitive> orderedBoxs)
     {
-
+        BVHNode* rootNode = new BVHNode();
+        rootNode->bound=
+        ++totalNodes;
+        for (auto& it : primitives)
+        {
+            rootNode->bound.Merge(it->bound);
+        }
     }
 
     void flattenBVH(BVHNode* rootNode, int* offset)
