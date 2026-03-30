@@ -20,8 +20,11 @@
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="..\..\Algorithm Library\include\mymesh.h" />
+    <ClInclude Include="include\AABB.h" />
+    <ClInclude Include="include\bvh.h" />
     <ClInclude Include="include\Grid.h" />
     <ClInclude Include="include\GridTraits.h" />
+    <ClInclude Include="include\KdTree.h" />
     <ClInclude Include="include\MeshOffseting.h" />
     <ClInclude Include="include\标头.h" />
   </ItemGroup>
@@ -117,6 +120,7 @@
       <PreprocessorDefinitions>_DEBUG;_CONSOLE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <ConformanceMode>true</ConformanceMode>
       <AdditionalIncludeDirectories>D:\Myproject\GitProject\Algorithm Library\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <LanguageStandard>stdcpp20</LanguageStandard>
     </ClCompile>
     <Link>
       <SubSystem>Console</SubSystem>

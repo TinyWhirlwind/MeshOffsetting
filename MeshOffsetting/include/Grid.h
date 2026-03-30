@@ -22,12 +22,6 @@ public:
 
     Point3i GetGridId(const Point3T& p)
     {
-        Point3i id;
-        for (int i = 0; i < 3; ++i)
-        {
-            id[i] = (p-_box.min)
-        }
-        id[0] = (p-_box.min)/_voxel[0]
     }
 
 };

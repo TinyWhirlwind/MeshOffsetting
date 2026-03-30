@@ -80,6 +80,7 @@ protected:
         node.splitValue = (node.box.min[dim] + node.box.max[dim]) * 0.5f;
         node.dim = dim;
 
+        Box3m leftBox, rightBox;
 
     }
  

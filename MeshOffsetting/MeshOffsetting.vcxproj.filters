@@ -41,5 +41,14 @@
     <ClInclude Include="include\标头.h">
       <Filter>头文件</Filter>
     </ClInclude>
+    <ClInclude Include="include\KdTree.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="include\bvh.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="include\AABB.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
   </ItemGroup>
 </Project>
