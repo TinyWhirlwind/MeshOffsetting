@@ -1,14 +1,6 @@
 #include "mymesh.h"
 #include"AABB.h"
-#include <atomic>
-#include <memory>
-#include <cstddef>
-#include <iomanip>
-#include <iostream>
-#include <list>
-#include <memory_resource>
 #include <span>
-class AABBBox;
 enum SplitMethod
 {
     SAH = 0, 
@@ -32,6 +24,7 @@ public:
         AABBBox bound;
         Point3m centroid;
     };
+
     class BVHNode
     {
     public:
@@ -41,15 +34,15 @@ public:
         unsigned int childCount;
         unsigned int firstPrimOffset;
 
-        void InitLeaf(int first, int n, const AABBBox& b)
+        void InitLeaf(int first, int count, const AABBBox& b)
         {
             firstPrimOffset = first;
-            childCount = n;//?
+            childCount = count;
             bound = b;
             child[0] = nullPtr;
             child[1] = nullPtr;
         }
-        void InitInterior(unsigned int axis, BVHNode* l, BVHNode* cr)
+        void InitInterior(unsigned int axis, BVHNode* cl, BVHNode* cr)
         {
             childNode[0] = cl;
             childNode[1] = cr;
@@ -59,13 +52,17 @@ public:
         }
 
     };
+
     BVH(const CMeshO& mesh, int maxPrimitiveCount, SplitMethod type) :
         _primitives(std::move(mesh.face)), maxPrimitiveCount(std::min(255, maxPrimitiveCount)), _splitType(type)
     {
-        std::vector<BVHPrimitive> bvhPrimitives(_primitives.size());
+        std::vector<BVHPrimitive> bvhPrimitives;
+        bvhPrimitives.resize(_primitives.size());
         for (int i = 0;  i< _primitives.size(); ++i)
         {
-            _primitives[i].GetBBox(bvhPrimitives[i].bound);
+            AABBBox ibox;
+            ibox = _primitives[i].GetBBox();
+            bvhPrimitives[i] = BVHPrimitive(i, ibox);
         }
         
         BVHNode* rootNode;
@@ -73,7 +70,7 @@ public:
         std::vector<Primitive> orderedBoxs;
         if (type == HLBVH)
         {
-
+            //动态变化,频繁建树，适合使用HLBVH算法构建BVH树，构建过程中需要频繁的内存分配和释放
         }
         else
         {
@@ -91,50 +88,61 @@ public:
     ~BVH();
 
 
-
-    void Set(const std::vector<CFaceO>::iterator& _oBegin,
-        const std::vector<CFaceO>::iterator& _oEnd,
-        int size)
-    {
-        if (_oBegin > _oEnd)
-            return;
-        _bvhPrimitives.clear();
-        BVHNode& curNode = _nodeList.back();
-        for (auto i = _oBegin; i < _oEnd; ++i)
-        {
-            AABBBox box;
-            box.Add(i->P(0));
-            box.Add(i->P(1));
-            box.Add(i->P(2));
-            _bvhPrimitives.push_back(box);
-
-            curNode.bound.Add(i->P(0));
-            curNode.bound.Add(i->P(1));
-            curNode.bound.Add(i->P(2));
-        }
-        curNode.childCount = _oEnd - _oBegin + 1;
-        //create tree
-        /*if (curNode.childCount > 1)
-        {
-            int _splitIndex = calcSplit(curNode,int)
-        }*/
-    }
-
-
 private:
+
     BVHNode* buildHLBVH()
     {
     }
 
+    //BVH线性构建，递归构建BVH树，返回根节点指针，totalNodes记录BVH树节点总数，orderedPrimsOffset记录有序的原始图元偏移量，orderedBoxs记录有序的原始图元边界框
     BVHNode* buildBVH(std::span<BVHPrimitive> primitives, std::atomic<int>* totalNodes, std::atomic<int>* orderedPrimsOffset, std::vector<Primitive> orderedBoxs)
     {
-        BVHNode* rootNode = new BVHNode();
-        rootNode->bound=
-        ++totalNodes;
+        ++*totalNodes;
+        BVHNode rootNode;
+        AABBBox box;
         for (auto& it : primitives)
         {
-            rootNode->bound.Merge(it->bound);
+            box.Merge(it->bound);
         }
+
+        float bestCost = primitives.size() * 1.0f;
+        float rootSA = rootNode->bound.SurfaceArea();
+
+        if (rootSA < epsilon || primitives.size() == 1)
+        {
+            int firstPrimOffset = orderedPrimsOffset->fetch_add(primitives.size());
+            for (int i = 0; i < primitives.size(); ++i)
+            {
+                int index = primitives[i].primitiveIndex;
+                orderedBoxs[firstPrimOffset + i] = primitives[index];
+            }
+            rootNode.InitLeaf(firstPrimOffset, primitives.size(), box);
+            return rootNode;
+        }
+        else
+        {
+            //找重心分布最开的轴
+            AABBBox centerBox;
+            for (const auto& it:primitives)
+            {   
+                centerBox.Add(it.centroid);
+            }
+            int dim = centerBox.MaxDim();
+            if (centerBox.min[dim] == centerBox.max[dim])//重心分布在各个
+            {
+
+            }
+        }
+        for (int i = 0; i < 3; ++i)
+        {
+            std::sort(primitives.begin(), primitives.end(), 
+                [i](const BVHPrimitive& a, const BVHPrimitive& b) 
+                {
+                    return a.centroid[i] < b.centroid[i];
+                });
+        }
+
+
     }
 
     void flattenBVH(BVHNode* rootNode, int* offset)

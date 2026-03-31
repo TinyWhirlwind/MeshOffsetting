@@ -1,4 +1,5 @@
 #include "mymesh.h"
+#include <algorithm>
 class AABBBox :public Box3m
 {
 public:
