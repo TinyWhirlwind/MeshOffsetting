@@ -1,6 +1,7 @@
 #include "mymesh.h"
 #include"AABB.h"
 #include <span>
+#include <nth_element>
 enum SplitMethod
 {
     SAH = 0, 
@@ -98,7 +99,7 @@ private:
     BVHNode* buildBVH(std::span<BVHPrimitive> primitives, std::atomic<int>* totalNodes, std::atomic<int>* orderedPrimsOffset, std::vector<Primitive> orderedBoxs)
     {
         ++*totalNodes;
-        BVHNode rootNode;
+        BVHNode node;
         AABBBox box;
         for (auto& it : primitives)
         {
@@ -106,18 +107,18 @@ private:
         }
 
         float bestCost = primitives.size() * 1.0f;
-        float rootSA = rootNode->bound.SurfaceArea();
+        float nodeSA = node->bound.SurfaceArea();
 
-        if (rootSA < epsilon || primitives.size() == 1)
+        if (nodeSA < epsilon || primitives.size() == 1)
         {
             int firstPrimOffset = orderedPrimsOffset->fetch_add(primitives.size());
-            for (int i = 0; i < primitives.size(); ++i)
+            for (size_t i = 0; i < primitives.size(); ++i)
             {
                 int index = primitives[i].primitiveIndex;
                 orderedBoxs[firstPrimOffset + i] = primitives[index];
             }
-            rootNode.InitLeaf(firstPrimOffset, primitives.size(), box);
-            return rootNode;
+            node.InitLeaf(firstPrimOffset, primitives.size(), box);
+            return node;
         }
         else
         {
@@ -128,8 +129,63 @@ private:
                 centerBox.Add(it.centroid);
             }
             int dim = centerBox.MaxDim();
-            if (centerBox.min[dim] == centerBox.max[dim])//重心分布在各个
+            if (centerBox.min[dim] == centerBox.max[dim])//重心分布在点上
             {
+                int firstPrimOffset = orderedPrimsOffset->fetch_add(bvhPrimitives.size());
+                for (size_t i = 0; i < primitives.size(); ++i)
+                {
+                    int index = primitives[i].primitiveIndex;
+                    orderedBoxs[firstPrimOffset + i] = primitives[index];
+                }
+                node.InitLeaf(firstPrimOffset, primitives.size(), centerBox);
+                return node;
+            }
+            else
+            {
+                int mid = primitives.size() / 2;
+                switch (_splitType)
+                {
+                case SAH: 
+                    {
+                    if (primitives.size() <= 2)
+                    {
+                        mid = primitives.size() / 2;
+                        std::nth_element(primitives.begin(), primitives.begin() + mid,
+                            primitives.end(),
+                            [dim](const BVHPrimitive& a, const BVHPrimitive& b) {
+                                return a.centroid[dim] < b.centroid[dim];
+                            });
+                    }
+                    else
+                    {
+
+                    }
+                    break;
+                    }
+                case Middle:
+                {
+                    Scalarm middle = (centerBox.min[dim] + centerBox.max[dim]) * 0.5;
+                    auto midIter = std::partition(primitives.begin(), primitives.end(), [dim, middle](const BVHPrimitive& pi)
+                        {
+                            return pi.centroid[dim] < middle;
+                        });
+                    mid = midIter - primitives.begin();
+                    if(midIter!= primitives.begin()&& midIter != primitives.end())
+                        break;
+                }
+                case EqualCounts:
+                {
+                    Scalarm middle = (centerBox.min[dim] + centerBox.max[dim]) * 0.5;
+                    std::nth_element(primitives.begin(), primitives.begin() + middle,
+                        primitives.end(),
+                        [dim](const BVHPrimitive& a, const BVHPrimitive& b) {
+                            return a.centroid[dim] < b.centroid[dim];
+                        });//部分排序
+                    break;
+                }
+                default:
+                    break;
+                }
 
             }
         }
