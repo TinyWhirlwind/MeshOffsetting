@@ -20,7 +20,7 @@ public:
         this->max.Z() = std::max(this->max.Z(), other.max.Z());
     }*/
 
-    AABBBox Merge(const AABBBox& box, const AABBBox& other)
+    static AABBBox Merge(const AABBBox & box, const AABBBox & other)
     {
         AABBBox result;
         result.min.X() = std::min(box.min.X(), other.min.X());
@@ -55,7 +55,7 @@ public:
 
     }
 
-    //相交测试
+    // Intersection test.
     bool checkOverlapAABB(const AABBBox& other)
     {
         if (other.IsEmpty()|| other.IsNull())

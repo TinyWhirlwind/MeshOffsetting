@@ -21,7 +21,7 @@
   <ItemGroup>
     <ClInclude Include="..\..\Algorithm Library\include\mymesh.h" />
     <ClInclude Include="include\AABB.h" />
-    <ClInclude Include="include\bvh.h" />
+    <ClInclude Include="include\BVH.h" />
     <ClInclude Include="include\Grid.h" />
     <ClInclude Include="include\GridTraits.h" />
     <ClInclude Include="include\KdTree.h" />
@@ -31,6 +31,7 @@
   <ItemGroup>
     <ClCompile Include="..\..\Algorithm Library\src\mymesh.cpp" />
     <ClCompile Include="main.cpp" />
+    <ClCompile Include="src\BVH.cpp" />
     <ClCompile Include="src\MeshOffseting.cpp" />
   </ItemGroup>
   <PropertyGroup Label="Globals">
@@ -119,7 +120,7 @@
       <SDLCheck>true</SDLCheck>
       <PreprocessorDefinitions>_DEBUG;_CONSOLE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <ConformanceMode>true</ConformanceMode>
-      <AdditionalIncludeDirectories>D:\Myproject\GitProject\Algorithm Library\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>D:\Myproject\GitProject\Algorithm Library\include;.;./include;./src;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <LanguageStandard>stdcpp20</LanguageStandard>
     </ClCompile>
     <Link>

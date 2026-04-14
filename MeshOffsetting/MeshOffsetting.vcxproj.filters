@@ -24,6 +24,9 @@
     <ClCompile Include="..\..\Algorithm Library\src\mymesh.cpp">
       <Filter>源文件</Filter>
     </ClCompile>
+    <ClCompile Include="src\BVH.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="include\Grid.h">
@@ -44,7 +47,7 @@
     <ClInclude Include="include\KdTree.h">
       <Filter>头文件</Filter>
     </ClInclude>
-    <ClInclude Include="include\bvh.h">
+    <ClInclude Include="include\BVH.h">
       <Filter>头文件</Filter>
     </ClInclude>
     <ClInclude Include="include\AABB.h">
