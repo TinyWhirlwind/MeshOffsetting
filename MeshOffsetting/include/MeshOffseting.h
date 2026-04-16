@@ -1,12 +1,12 @@
 #ifndef _MESH_OFFSETING_H_
-#
+#define _MESH_OFFSETING_H_
 #include "mymesh.h"
 #include "Grid.h"
 #define Scalarm double
 class MeshOffseting
 {
 public:
-    MeshOffseting(const CMeshO& mesh);
+    MeshOffseting(CMeshO mesh);
     ~MeshOffseting();
 
 public:
@@ -16,3 +16,4 @@ public:
 private:
     CMeshO offsetMesh;
 };
+#endif 

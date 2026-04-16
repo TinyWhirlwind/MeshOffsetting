@@ -1,6 +1,6 @@
 #include "mymesh.h"
 #include <algorithm>
-class AABBBox :public Box3m
+class AABBBox : public Box3m
 {
 public:
     unsigned int GetMaxAxis()
@@ -8,17 +8,6 @@ public:
         _dim = _diag.X() > _diag.Y() ? 0 : (_diag.Y() > _diag.Z() ? 1 : 2);
         return _dim;
     }
-
-   /* void Merge(const AABBBox& other)
-    {
-        this->min.X() = std::min(this->min.X(), other.min.X());
-        this->min.Y() = std::min(this->min.Y(), other.min.Y());
-        this->min.Z() = std::min(this->min.Z(), other.min.Z());
-
-        this->max.X() = std::max(this->max.X(), other.max.X());
-        this->max.Y() = std::max(this->max.Y(), other.max.Y());
-        this->max.Z() = std::max(this->max.Z(), other.max.Z());
-    }*/
 
     static AABBBox Merge(const AABBBox & box, const AABBBox & other)
     {

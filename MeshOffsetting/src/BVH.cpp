@@ -1,33 +1,32 @@
 #include "BVH.h"
-
+#include <memory_resource>
+#include <thread>
 #include <algorithm>
 #include <utility>
 
 template <class Primitive>
-BVH<Primitive>::BVH(std::vector<Primitive> p, int maxPrimitiveNode, SplitMethod type)
-    : maxPrimitiveNode(std::min(255, maxPrimitiveNode)),
-    _primitives(std::move(p)),
-    _splitType(type)
-{
-
-}
-
-template <class Primitive>
-BVH<Primitive>::BVH(const CMeshO& mesh, int maxPrimitiveNode, SplitMethod type) :
-    _primitives(std::move(mesh.face)), maxPrimitiveNode(std::min(255, maxPrimitiveNode)), _splitType(type)
+BVH<Primitive>::BVH(std::vector<Primitive> prims, int maxPrimitiveNode, SplitMethod type) :
+    _primitives(std::move(prims)), maxPrimitiveNode(std::min(255, maxPrimitiveNode)), _primitives(std::move(prims)), _splitType(type)
 {
     std::vector<BVHPrimitive> bvhPrimitives;
     bvhPrimitives.resize(_primitives.size());
     for (int i = 0; i < _primitives.size(); ++i)
     {
-        AABBBox ibox;
-        ibox = _primitives[i].GetBBox();
+        AABBBox ibox = _primitives[i].GetBBox();
         bvhPrimitives[i] = BVHPrimitive(i, ibox);
+        
+        /*std::pmr::monotonic_buffer_resource resource;
+        std::allocator allocator(&resource);
+        using Resource = std::pmr::monotonic_buffer_resource;
+        using Allocator = std::pmr::polymorphic_allocator<std::byte>
+        std::vector<std::unique_ptr<Resource>> threadBufferResources;*/
+        //ignore thread part...
+
     }
 
     BVHNode* rootNode;
     std::atomic<int> totalNodes{ 0 };
-    std::vector<Primitive> orderedBoxs;
+    std::vector<Primitive> orderedPrims;
     if (type == HLBVH)
     {
         
@@ -35,13 +34,13 @@ BVH<Primitive>::BVH(const CMeshO& mesh, int maxPrimitiveNode, SplitMethod type) 
     else
     {
         std::atomic<int> orderedPrimsOffset{ 0 };
-        rootNode = buildBVH(std::span<BVHPrimitive>(bvhPrimitives), &totalNodes, &orderedPrimsOffset, orderedBoxs);
+        rootNode = buildBVH(std::span<BVHPrimitive>(bvhPrimitives), &totalNodes, &orderedPrimsOffset, orderedPrims);
     }
-    _primitives.swap(orderedBoxs);
+    _primitives.swap(orderedPrims);
 
     bvhPrimitives.resize(0);
     bvhPrimitives.shrink_to_fit();
-    nodes = new BVHNode[totalNodes];
+    nodes = new LinearBVHNode[totalNodes];
     int offset = 0;
     flattenBVH(rootNode, &offset);
 }
@@ -53,7 +52,7 @@ BVH<Primitive>::~BVH()
 }
 
 template <class Primitive>
-BVHNode* BVH<Primitive>::buildBVH(std::span<BVHPrimitive> primitives, std::atomic<int>* totalNodes, std::atomic<int>* orderedPrimsOffset, std::vector<Primitive> orderedBoxs)
+BVHNode* BVH<Primitive>::buildBVH(std::span<BVHPrimitive> primitives, std::atomic<int>* totalNodes, std::atomic<int>* orderedPrimsOffset, std::vector<Primitive> orderedPrims)
 {
     ++*totalNodes;
     BVHNode* node;
@@ -68,13 +67,13 @@ BVHNode* BVH<Primitive>::buildBVH(std::span<BVHPrimitive> primitives, std::atomi
 
     if (nodeSA < epsilon || primitives.size() == 1)
     {
-        int firstPrimOffset = orderedPrimsOffset->fetch_add(primitives.size());
+        int leafOffset = orderedPrimsOffset->fetch_add(primitives.size());
         for (size_t i = 0; i < primitives.size(); ++i)
         {
             int index = primitives[i].primitiveIndex;
-            orderedBoxs[firstPrimOffset + i] = primitives[index];
+            orderedPrims[leafOffset + i] = primitives[index];
         }
-        node->InitLeaf(firstPrimOffset, primitives.size(), boxSum);
+        node->InitLeaf(leafOffset, primitives.size(), boxSum);
         return node;
     }
     else
@@ -83,19 +82,19 @@ BVHNode* BVH<Primitive>::buildBVH(std::span<BVHPrimitive> primitives, std::atomi
         AABBBox centerBox;
         for (const auto& it : primitives)
         {
-            centerBox.Add(it.centroid);
+            centerBox.Add(it.Centroid());
         }
         int dim = centerBox.MaxDim();
         // All centroids collapse to a single point on this axis.
         if (centerBox.min[dim] == centerBox.max[dim])
         {
-            int firstPrimOffset = orderedPrimsOffset->fetch_add(primitives.size());
+            int leafOffset = orderedPrimsOffset->fetch_add(primitives.size());
             for (size_t i = 0; i < primitives.size(); ++i)
             {
                 int index = primitives[i].primitiveIndex;
-                orderedBoxs[firstPrimOffset + i] = primitives[index];
+                orderedPrims[leafOffset + i] = primitives[index];
             }
-            node->InitLeaf(firstPrimOffset, primitives.size(), centerBox);
+            node->InitLeaf(leafOffset, primitives.size(), centerBox);
             return node;
         }
         else
@@ -108,7 +107,7 @@ BVHNode* BVH<Primitive>::buildBVH(std::span<BVHPrimitive> primitives, std::atomi
                 Scalarm middle = (centerBox.min[dim] + centerBox.max[dim]) * 0.5;
                 auto midIter = std::partition(primitives.begin(), primitives.end(), [dim, middle](const BVHPrimitive& pi)
                     {
-                        return pi.centroid[dim] < middle;
+                        return pi.Centroid()[dim] < middle;
                     });
                 mid = midIter - primitives.begin();
                 if (midIter != primitives.begin() && midIter != primitives.end())
@@ -120,7 +119,7 @@ BVHNode* BVH<Primitive>::buildBVH(std::span<BVHPrimitive> primitives, std::atomi
                 std::nth_element(primitives.begin(), primitives.begin() + middle,
                     primitives.end(),
                     [dim](const BVHPrimitive& a, const BVHPrimitive& b) {
-                        return a.centroid[dim] < b.centroid[dim];
+                        return a.Centroid()[dim] < b.Centroid()[dim];
                     }); // Partially sort primitives around the median.
                 break;
             }
@@ -133,7 +132,7 @@ BVHNode* BVH<Primitive>::buildBVH(std::span<BVHPrimitive> primitives, std::atomi
                     std::nth_element(primitives.begin(), primitives.begin() + mid,
                         primitives.end(),
                         [dim](const BVHPrimitive& a, const BVHPrimitive& b) {
-                            return a.centroid[dim] < b.centroid[dim];
+                            return a.Centroid()[dim] < b.Centroid()[dim];
                         });
                 }
                 else
@@ -143,7 +142,7 @@ BVHNode* BVH<Primitive>::buildBVH(std::span<BVHPrimitive> primitives, std::atomi
                     SplitBucket buckets[nBucket];
                     for (const auto& prim : primitives)
                     {
-                        int b = nBucket * centerBox.NormalizePointToBounds(prim.centroid)[dim];
+                        int b = nBucket * centerBox.NormalizePointToBounds(prim.Centroid())[dim];
                         if (b == nBucket)
                         {
                             b = nBucket - 1;
@@ -195,7 +194,7 @@ BVHNode* BVH<Primitive>::buildBVH(std::span<BVHPrimitive> primitives, std::atomi
                         auto midIter = std::partition(primitives.begin(), primitives.end(),
                             [=](const BVHPrimitive& perBounds)
                             {
-                                int index = nBucket * centerBox.NormalizePointToBounds(perBounds.centroid)[dim];
+                                int index = nBucket * centerBox.NormalizePointToBounds(perBounds.Centroid())[dim];
                                 if (index == nBucket) index == nBucket - 1;
                                 return index <= minCostSplitBucket;
                             });
@@ -204,14 +203,14 @@ BVHNode* BVH<Primitive>::buildBVH(std::span<BVHPrimitive> primitives, std::atomi
                     else
                     {
                         // Reserve a contiguous range in the global ordered primitive array.
-                        int firstPrimOffset = orderedPrimsOffset->fetch_add(primitives.size());
+                        int leafOffset = orderedPrimsOffset->fetch_add(primitives.size());
                         for (size_t i = 0; i < primitives.size(); ++i)
                         {
                             int index = primitives[i].primitiveIndex;
-                            orderedBoxs[firstPrimOffset + i] = primitives[index];
+                            orderedPrims[leafOffset + i] = primitives[index];
                         }
                         // Each leaf stores the first primitive offset, count, and bounding box.
-                        node->InitLeaf(firstPrimOffset, primitives.size(), boxSum);
+                        node->InitLeaf(leafOffset, primitives.size(), boxSum);
                         return node;
                     }
                 }
@@ -229,13 +228,13 @@ BVHNode* BVH<Primitive>::buildBVH(std::span<BVHPrimitive> primitives, std::atomi
                     {
                         children[0] =
                             buildBVH(primitives.subspan(0, mid),
-                                totalNodes, orderedPrimsOffset, orderedBoxs);
+                                totalNodes, orderedPrimsOffset, orderedPrims);
                     }
                     else
                     {
                         children[1] =
                             buildBVH(primitives.subspan(mid),
-                                totalNodes, orderedPrimsOffset, orderedBoxs);
+                                totalNodes, orderedPrimsOffset, orderedPrims);
                     }
                 }
             }
@@ -243,13 +242,34 @@ BVHNode* BVH<Primitive>::buildBVH(std::span<BVHPrimitive> primitives, std::atomi
             {
                 children[0] =
                     buildBVH(primitives.subspan(0, mid),
-                        totalNodes, orderedPrimsOffset, orderedBoxs);
+                        totalNodes, orderedPrimsOffset, orderedPrims);
                 children[1] =
                     buildBVH(primitives.subspan(mid),
-                        totalNodes, orderedPrimsOffset, orderedBoxs);
+                        totalNodes, orderedPrimsOffset, orderedPrims);
             }
             node->InitInterior(dim, children[0], children[1]);
         }
     }
     return node;
+}
+
+//preorder
+template <class Primitive>
+int BVH<Primitive>::flattenBVH(BVHNode* node, int* offset)
+{
+    LinearBVHNode* linearNode = &nodes[*offset];
+    linearNode->bound = node->bound;
+    int nodeOffset = (*offset)++;
+    if (node->childCount > 0)
+    {
+        linearNode->leafOffset = node->leafOffset;
+        linearNode->nPrimitives = node->childCount;
+    }
+    else
+    {
+        linearNode->axis = node->splitAxis;
+        linearNode->nPrimitives = 0;
+        flattenBVH(node->childNode[0], offset);
+    }
+    return nodeOffset;
 }

@@ -1,27 +1,26 @@
 #include "mymesh.h"
-#include <vcg/space/point3.h>
+#include <base_type.h>
 template <class ScalarType>
 class Grid
 {
 public:
-    typdef vcg::Point3<ScalarType> Point3T;
-    typdef vcg::Point3i Point3i;
-    Box3m _box;
-    Point3T _dim[3];
-    Point3T _voxel[3];
-    Point3i _size[3];
+    Grid(const Box3m& box, ScalarType voxel_size):_box(box)
+    {}
+    ~Grid();
+public:
 
     void GetDimAndVoxel()
     {
-        _dim = _box.max - _box.min;
-        for (int i = 0; i < 3; ++i)
-        {
-            _voxel[0] = _dim[0] / _size[0];
-        }
     }
 
-    Point3i GetGridId(const Point3T& p)
+    Point3m GetGridId(const Point3m& p)
     {
+
     }
+public:
+    Box3m _box;
+    Point3m _dim[3];
+    Point3m _voxel[3];
+
 
 };
