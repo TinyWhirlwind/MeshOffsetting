@@ -26,6 +26,7 @@
     <ClInclude Include="include\GridTraits.h" />
     <ClInclude Include="include\KdTree.h" />
     <ClInclude Include="include\MeshOffseting.h" />
+    <ClInclude Include="include\SSBVH.h" />
     <ClInclude Include="include\标头.h" />
   </ItemGroup>
   <ItemGroup>

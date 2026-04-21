@@ -52,6 +52,98 @@ BVH<Primitive>::~BVH()
 }
 
 template <class Primitive>
+float BVH<Primitive>::CalcDistancePointToBound(const Point3m& p, const AABBBox& box)
+{
+    Scalarm dx = 0, dy = 0, dz = 0;
+
+    if (p.X() < box.min.X()) dx = box.min.X() - p.X();
+    else if (p.X() > box.max.X()) dx = p.X() - box.max.X();
+
+    if (p.Y() < box.min.Y()) dy = box.min.Y() - p.Y();
+    else if (p.Y() > box.max.Y()) dy = p.Y() - box.max.Y();
+
+    if (p.Z() < box.min.Z()) dz = box.min.Z() - p.Z();
+    else if (p.Z() > box.max.Z()) dz = p.Z() - box.max.Z();
+
+    return dx * dx + dy * dy + dz * dz;
+}
+
+template <class Primitive>
+bool BVH<Primitive>::CalcDistancePointToPrimitive(const Point3m& p, const Primitive& prim, QueryResult& result)
+{
+    if constexpr (std::is_same_v<Primitive, CFaceO>)
+    {
+        //返回重心坐标
+        return true;
+    }
+    return false;
+}
+
+template <class Primitive>
+void BVH<Primitive>::QueryClosestPoint(const Point3m& p, QueryResult& result)
+{
+    float minDistance = FLT_MAX;
+    Point3m closestPoint;
+    Primitive closestPrim;
+
+    std::stack<int> prims;
+    int seed = 0;
+    prims.push(seed);
+    while (!prims.empty())
+    {
+        int id = prims.pop();
+        const LinearBVHNode* node = nodes[id];
+        if (CalcDistancePointToBound(node.bounds) > minDistance)
+            continue;
+        if (node->nPrimitives == 0)
+        {
+            for (int i = 0; i < node->leafOffset; ++i)
+            { 
+                QueryResult curResult = CalcDistancePointToPrimitive(_primitives[i]);
+                if (curResult.dist < minDistance)
+                {
+                    result = curResult;
+                }
+            }
+        }
+        else
+        {
+            auto leftNode = nodes[id + 1];
+            auto rightNode = nodes[id + 2];
+            auto dis0 = CalcDistancePointToBound(leftNode.bounds);
+            auto dis1 = CalcDistancePointToBound(rightNode.bounds);
+            if (dis0 > dis1)
+            {
+                if (dis0 < minDistance)
+                {
+                    prims.push(id + 1);
+                }
+                if (dis1 < minDistance)
+                {
+                    prims.push(id + 2);
+                }
+            }
+            else
+            {
+                if (dis1 < minDistance)
+                {
+                    prims.push(id + 2);
+                }
+                if (dis0 < minDistance)
+                {
+                    prims.push(id + 1);
+                }
+            }
+        }
+    }
+    
+    result.closestPoint = closestPoint;
+    result.dist = minDistance;
+    result.intersected = ...;
+    
+}
+
+template <class Primitive>
 BVHNode* BVH<Primitive>::buildBVH(std::span<BVHPrimitive> primitives, std::atomic<int>* totalNodes, std::atomic<int>* orderedPrimsOffset, std::vector<Primitive> orderedPrims)
 {
     ++*totalNodes;
