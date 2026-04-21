@@ -43,7 +43,7 @@ public:
         Point3m coord;
         for (int i = 0; i < 3; ++i)
         {
-            coord[i] = id[i] * voxel[i];
+            coord[i] = id[i] * _voxel[i];
         }
         coord += box.min;
         box.min = coord;

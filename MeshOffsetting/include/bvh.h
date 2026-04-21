@@ -86,6 +86,7 @@ public:
     BVH(std::vector<Primitive> prims, int maxPrimitiveNode = 1, SplitMethod type = SplitMethod::SAH);
     ~BVH();
 
+    void QueryClosestPoint(const Point3m& p, QueryResult& result);
     //static BVH* Create(std::vector<Primitive> primitives);
     //bool IntersectP(const Ray3m& ray, float t);
 
@@ -101,6 +102,9 @@ private:
     BVHNode* buildBVH(std::span<BVHPrimitive> primitives, std::atomic<int>* totalNodes, std::atomic<int>* orderedPrimsOffset, std::vector<Primitive> orderedPrims);
     int flattenBVH(BVHNode* node, int* offset);
     unsigned int calcSplit(BVHNode* node);
+
+    float CalcDistancePointToBound(const Point3m& p, const AABBBox& box);
+    bool CalcDistancePointToPrimitive(const Point3m& p, const Primitive& prim, QueryResult& result);
 
 private:
     int maxPrimitiveNode;

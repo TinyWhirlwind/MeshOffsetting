@@ -19,7 +19,7 @@ public:
     {
         epsilon = std::numeric_limits<float>::epsilon();
         auto a = mesh.face.begin();
-        Set(mesh.face.begin(), mesh.face.end(), mesh.face.size());
+        Set(mesh.face.begin(), mesh.face.end(), mesh.face.size(),false);
     }
     ~KdTree();
 
