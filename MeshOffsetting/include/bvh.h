@@ -70,6 +70,7 @@ public:
     }
 
 };
+
 struct QueryResult
 {
     double dist;
@@ -77,6 +78,8 @@ struct QueryResult
     bool intersected;
     MESHLAB_SCALAR s, t; //barycentric coordinates
     Point3m closestPoint;
+    int id;
+
 };
 
 template <class Primitive>

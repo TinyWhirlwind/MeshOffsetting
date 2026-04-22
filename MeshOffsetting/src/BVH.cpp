@@ -86,7 +86,7 @@ void BVH<Primitive>::QueryClosestPoint(const Point3m& p, QueryResult& result)
     Point3m closestPoint;
     Primitive closestPrim;
 
-    std::stack<int> prims;
+    std::stack<int> prims;+
     int seed = 0;
     prims.push(seed);
     while (!prims.empty())
@@ -103,6 +103,7 @@ void BVH<Primitive>::QueryClosestPoint(const Point3m& p, QueryResult& result)
                 if (curResult.dist < minDistance)
                 {
                     result = curResult;
+                    result.id = i;
                 }
             }
         }
@@ -137,10 +138,8 @@ void BVH<Primitive>::QueryClosestPoint(const Point3m& p, QueryResult& result)
         }
     }
     
-    result.closestPoint = closestPoint;
-    result.dist = minDistance;
-    result.intersected = ...;
-    
+    result.sign = (p - result.closestPoint) * _primitives[result.id].N() > 0 ? 1 : 0;
+    return;
 }
 
 template <class Primitive>
