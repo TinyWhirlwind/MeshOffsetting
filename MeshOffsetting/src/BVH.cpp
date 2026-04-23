@@ -69,70 +69,77 @@ float BVH<Primitive>::CalcDistancePointToBound(const Point3m& p, const AABBBox& 
 }
 
 template <class Primitive>
-bool BVH<Primitive>::CalcDistancePointToPrimitive(const Point3m& p, const Primitive& prim, QueryResult& result)
+QueryResult BVH<Primitive>::CalcDistancePointToPrimitive(const Point3m& p, const Primitive& prim)
 {
+    QueryResult result;
     if constexpr (std::is_same_v<Primitive, CFaceO>)
-    {
-        //返回重心坐标
-        return true;
+    { 
     }
-    return false;
+    return result;
 }
 
 template <class Primitive>
 void BVH<Primitive>::QueryClosestPoint(const Point3m& p, QueryResult& result)
 {
+    assert(nodes != nullptr);
     float minDistance = FLT_MAX;
     Point3m closestPoint;
     Primitive closestPrim;
 
-    std::stack<int> prims;+
+    std::stack<int> prims;
     int seed = 0;
     prims.push(seed);
     while (!prims.empty())
     {
-        int id = prims.pop();
+        int id = prims.top();
+        prims.pop();
+
         const LinearBVHNode* node = nodes[id];
-        if (CalcDistancePointToBound(node.bounds) > minDistance)
+        if (CalcDistancePointToBound(node.bounds) >= minDistance)
             continue;
-        if (node->nPrimitives == 0)
+        if (node->nPrimitives != 0)
         {
-            for (int i = 0; i < node->leafOffset; ++i)
+            for (int i = 0; i < node->nPrimitives; ++i)
             { 
-                QueryResult curResult = CalcDistancePointToPrimitive(_primitives[i]);
+                QueryResult curResult = CalcDistancePointToPrimitive(p,_primitives[node->leafOffset + i]);
                 if (curResult.dist < minDistance)
                 {
+                    minDistance = curResult.dist;
                     result = curResult;
-                    result.id = i;
+                    result.id = node->leafOffset + i;
                 }
             }
         }
         else
         {
-            auto leftNode = nodes[id + 1];
-            auto rightNode = nodes[id + 2];
-            auto dis0 = CalcDistancePointToBound(leftNode.bounds);
-            auto dis1 = CalcDistancePointToBound(rightNode.bounds);
-            if (dis0 > dis1)
+            int left = id + 1;
+            int right = node->interiorOffset;
+            auto dl = CalcDistancePointToBound(p, nodes[left].bounds);
+            auto dr = CalcDistancePointToBound(p, nodes[right].bounds);
+
+            assert(left < _primitives.size());
+            assert(right < _primitives.size() && right >= 0);
+
+            if (dl < dr)
             {
-                if (dis0 < minDistance)
+                if (dr < minDistance)
                 {
-                    prims.push(id + 1);
+                    prims.push(left);
                 }
-                if (dis1 < minDistance)
+                if (dl < minDistance)
                 {
-                    prims.push(id + 2);
+                    prims.push(right);
                 }
             }
             else
             {
-                if (dis1 < minDistance)
+                if (dl < minDistance)
                 {
-                    prims.push(id + 2);
+                    prims.push(left);
                 }
-                if (dis0 < minDistance)
+                if (dr < minDistance)
                 {
-                    prims.push(id + 1);
+                    prims.push(right);
                 }
             }
         }
@@ -361,6 +368,7 @@ int BVH<Primitive>::flattenBVH(BVHNode* node, int* offset)
         linearNode->axis = node->splitAxis;
         linearNode->nPrimitives = 0;
         flattenBVH(node->childNode[0], offset);
+        linearNode->interiorOffset = flattenBVH(node->childNode[1], offset);
     }
     return nodeOffset;
 }

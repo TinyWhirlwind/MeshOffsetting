@@ -2,6 +2,19 @@
 #include <base_type.h>
 using namespace vcg;
 template <class ScalarType>
+struct GridNode
+{
+    float dist = FLT_MAX;
+    int faceId = -1;
+    int sign = 0;            // -1 inside, +1 outside, 0 unknown
+    bool isV = false;
+    float s, t;
+};
+struct GridCell
+{
+    int node[8];
+
+};
 class Grid
 {
 public:

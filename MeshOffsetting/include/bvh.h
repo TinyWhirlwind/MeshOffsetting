@@ -74,7 +74,7 @@ public:
 struct QueryResult
 {
     double dist;
-    int sign;//0/1
+    int sign;//0/1/-1
     bool intersected;
     MESHLAB_SCALAR s, t; //barycentric coordinates
     Point3m closestPoint;
@@ -107,7 +107,7 @@ private:
     unsigned int calcSplit(BVHNode* node);
 
     float CalcDistancePointToBound(const Point3m& p, const AABBBox& box);
-    bool CalcDistancePointToPrimitive(const Point3m& p, const Primitive& prim, QueryResult& result);
+    QueryResult CalcDistancePointToPrimitive(const Point3m& p, const Primitive& prim);
 
 private:
     int maxPrimitiveNode;
