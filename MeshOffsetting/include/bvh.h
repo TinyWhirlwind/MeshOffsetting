@@ -102,7 +102,7 @@ private:
     // totalNodes stores the total number of BVH nodes.
     // orderedPrimsOffset stores the offset into the ordered primitive array.
     // orderedBoxs stores the reordered primitives used by the BVH.
-    BVHNode* buildBVH(std::span<BVHPrimitive> primitives, std::atomic<int>* totalNodes, std::atomic<int>* orderedPrimsOffset, std::vector<Primitive> orderedPrims);
+    BVHNode* buildBVH(std::span<BVHPrimitive> primitives, std::atomic<int>* totalNodes, std::atomic<int>* orderedPrimsOffset, std::vector<Primitive>& orderedPrims);
     int flattenBVH(BVHNode* node, int* offset);
     unsigned int calcSplit(BVHNode* node);
 
@@ -113,5 +113,6 @@ private:
     int maxPrimitiveNode;
     std::vector<Primitive> _primitives;
     LinearBVHNode* nodes = nullptr;
+    //int _totalNodes = 0;
     SplitMethod _splitType;
 };

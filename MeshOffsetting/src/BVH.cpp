@@ -6,7 +6,7 @@
 
 template <class Primitive>
 BVH<Primitive>::BVH(std::vector<Primitive> prims, int maxPrimitiveNode, SplitMethod type) :
-    _primitives(std::move(prims)), maxPrimitiveNode(std::min(255, maxPrimitiveNode)), _primitives(std::move(prims)), _splitType(type)
+    _primitives(std::move(prims)), maxPrimitiveNode(std::min(255, maxPrimitiveNode)), _splitType(type)
 {
     std::vector<BVHPrimitive> bvhPrimitives;
     bvhPrimitives.resize(_primitives.size());
@@ -24,7 +24,7 @@ BVH<Primitive>::BVH(std::vector<Primitive> prims, int maxPrimitiveNode, SplitMet
 
     }
 
-    BVHNode* rootNode;
+    BVHNode* rootNode = new BVHNode();
     std::atomic<int> totalNodes{ 0 };
     std::vector<Primitive> orderedPrims;
     if (type == HLBVH)
@@ -71,7 +71,9 @@ float BVH<Primitive>::CalcDistancePointToBound(const Point3m& p, const AABBBox& 
 template <class Primitive>
 QueryResult BVH<Primitive>::CalcDistancePointToPrimitive(const Point3m& p, const Primitive& prim)
 {
-    QueryResult result;
+    QueryResult result{};
+    result.dist = FLT_MAX;
+    result.id = -1;
     if constexpr (std::is_same_v<Primitive, CFaceO>)
     { 
     }
@@ -94,8 +96,8 @@ void BVH<Primitive>::QueryClosestPoint(const Point3m& p, QueryResult& result)
         int id = prims.top();
         prims.pop();
 
-        const LinearBVHNode* node = nodes[id];
-        if (CalcDistancePointToBound(node.bounds) >= minDistance)
+        const LinearBVHNode* node = &nodes[id];
+        if (CalcDistancePointToBound(p, node->bounds) >= minDistance)
             continue;
         if (node->nPrimitives != 0)
         {
@@ -116,19 +118,15 @@ void BVH<Primitive>::QueryClosestPoint(const Point3m& p, QueryResult& result)
             int right = node->interiorOffset;
             auto dl = CalcDistancePointToBound(p, nodes[left].bounds);
             auto dr = CalcDistancePointToBound(p, nodes[right].bounds);
-
-            assert(left < _primitives.size());
-            assert(right < _primitives.size() && right >= 0);
-
             if (dl < dr)
             {
                 if (dr < minDistance)
                 {
-                    prims.push(left);
+                    prims.push(right);
                 }
                 if (dl < minDistance)
                 {
-                    prims.push(right);
+                    prims.push(left);
                 }
             }
             else
@@ -145,15 +143,15 @@ void BVH<Primitive>::QueryClosestPoint(const Point3m& p, QueryResult& result)
         }
     }
     
-    result.sign = (p - result.closestPoint) * _primitives[result.id].N() > 0 ? 1 : 0;
+    //result.sign = (p - result.closestPoint) * _primitives[result.id].N() > 0 ? 1 : 0;
     return;
 }
 
 template <class Primitive>
-BVHNode* BVH<Primitive>::buildBVH(std::span<BVHPrimitive> primitives, std::atomic<int>* totalNodes, std::atomic<int>* orderedPrimsOffset, std::vector<Primitive> orderedPrims)
+BVHNode* BVH<Primitive>::buildBVH(std::span<BVHPrimitive> primitives, std::atomic<int>* totalNodes, std::atomic<int>* orderedPrimsOffset, std::vector<Primitive>& orderedPrims)
 {
     ++*totalNodes;
-    BVHNode* node;
+    BVHNode* node = new BVHNode();
     AABBBox boxSum;
     for (const auto& it : primitives)
     {
@@ -161,15 +159,15 @@ BVHNode* BVH<Primitive>::buildBVH(std::span<BVHPrimitive> primitives, std::atomi
     }
 
     //float bestCost = primitives.size() * 1.0f;
-    float nodeSA = node->bound.SurfaceArea();
-
+    float nodeSA = boxSum.SurfaceArea();
+    orderedPrims.resize(primitives.size());
     if (nodeSA < epsilon || primitives.size() == 1)
     {
         int leafOffset = orderedPrimsOffset->fetch_add(primitives.size());
         for (size_t i = 0; i < primitives.size(); ++i)
         {
             int index = primitives[i].primitiveIndex;
-            orderedPrims[leafOffset + i] = primitives[index];
+            orderedPrims[leafOffset + i] = _primitives[index];
         }
         node->InitLeaf(leafOffset, primitives.size(), boxSum);
         return node;
@@ -190,7 +188,7 @@ BVHNode* BVH<Primitive>::buildBVH(std::span<BVHPrimitive> primitives, std::atomi
             for (size_t i = 0; i < primitives.size(); ++i)
             {
                 int index = primitives[i].primitiveIndex;
-                orderedPrims[leafOffset + i] = primitives[index];
+                orderedPrims[leafOffset + i] = _primitives[index];
             }
             node->InitLeaf(leafOffset, primitives.size(), centerBox);
             return node;
@@ -305,7 +303,7 @@ BVHNode* BVH<Primitive>::buildBVH(std::span<BVHPrimitive> primitives, std::atomi
                         for (size_t i = 0; i < primitives.size(); ++i)
                         {
                             int index = primitives[i].primitiveIndex;
-                            orderedPrims[leafOffset + i] = primitives[index];
+                            orderedPrims[leafOffset + i] = _primitives[index];
                         }
                         // Each leaf stores the first primitive offset, count, and bounding box.
                         node->InitLeaf(leafOffset, primitives.size(), boxSum);
@@ -356,7 +354,7 @@ template <class Primitive>
 int BVH<Primitive>::flattenBVH(BVHNode* node, int* offset)
 {
     LinearBVHNode* linearNode = &nodes[*offset];
-    linearNode->bound = node->bound;
+    linearNode->bounds = node->bound;
     int nodeOffset = (*offset)++;
     if (node->childCount > 0)
     {
