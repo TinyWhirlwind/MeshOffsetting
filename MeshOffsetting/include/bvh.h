@@ -17,24 +17,28 @@ struct SplitBucket
     int count = 0;
     AABBBox bound;
 };
+template <class BV>
 class BVHPrimitive
 {
 public:
-    BVHPrimitive(int i, AABBBox box) :primitiveIndex(i), bound(box)
+    BVHPrimitive(int i, BV box,const AABBBox& aabbIn) :primitiveIndex(i), bound(box), aabb(aabbIn)
     {
     }
     ~BVHPrimitive() {};
 
     int primitiveIndex;
-    AABBBox bound;
+    BV bound;
+    AABBBox aabb;
     Point3m Centroid() const
     {
-        return bound.Center();
+        return aabb.Center();
     }
 };
+
+template <class BV>
 struct alignas(32) LinearBVHNode
 {
-    AABBBox bounds;
+    BV bounds;
     union
     {
         int leafOffset;   // leaf
@@ -43,16 +47,18 @@ struct alignas(32) LinearBVHNode
     uint16_t nPrimitives;  // 0 -> interior node
     uint8_t axis;          // interior node: xyz
 };
+
+template <class BV>
 class BVHNode
 {
 public:
-    BVHNode* childNode[2];
-    AABBBox bound;
+    BVHNode<BV>* childNode[2];
+    BV bound;
     unsigned int splitAxis;
     unsigned int childCount;
     unsigned int leafOffset;
 
-    void InitLeaf(int first, int count, const AABBBox& b)
+    void InitLeaf(int first, int count, const BV& b)
     {
         leafOffset = first;
         childCount = count;
@@ -60,13 +66,13 @@ public:
         childNode[0] = nullptr;
         childNode[1] = nullptr;
     }
-    void InitInterior(unsigned int axis, BVHNode* cl, BVHNode* cr)
+    void InitInterior(unsigned int axis, BVHNode<BV>* cl, BVHNode<BV>* cr)
     {
         childNode[0] = cl;
         childNode[1] = cr;
         splitAxis = axis;
         childCount = 0;
-        bound = AABBBox::Merge(cr->bound, cl->bound);
+        bound = BV::Merge(cr->bound, cl->bound);
     }
 
 };
@@ -82,7 +88,7 @@ struct QueryResult
 
 };
 
-template <class Primitive>
+template <class Primitive, class BV>
 class BVH
 {
 public:
@@ -96,23 +102,23 @@ public:
 
 private:
 
-    BVHNode* buildHLBVH();
+    BVHNode<BV>* buildHLBVH();
 
     // Build the BVH recursively and return the root node.
     // totalNodes stores the total number of BVH nodes.
     // orderedPrimsOffset stores the offset into the ordered primitive array.
     // orderedBoxs stores the reordered primitives used by the BVH.
-    BVHNode* buildBVH(std::span<BVHPrimitive> primitives, std::atomic<int>* totalNodes, std::atomic<int>* orderedPrimsOffset, std::vector<Primitive>& orderedPrims);
-    int flattenBVH(BVHNode* node, int* offset);
-    unsigned int calcSplit(BVHNode* node);
+    BVHNode<BV>* buildBVH(std::span<BVHPrimitive<BV>> primitives, std::atomic<int>* totalNodes, std::atomic<int>* orderedPrimsOffset, std::vector<Primitive>& orderedPrims);
+    int flattenBVH(BVHNode<BV>* node, int* offset);
+    unsigned int calcSplit(BVHNode<BV>* node);
 
-    float CalcDistancePointToBound(const Point3m& p, const AABBBox& box);
+    float CalcDistancePointToBV(const Point3m& p, const BV& box);
     QueryResult CalcDistancePointToPrimitive(const Point3m& p, const Primitive& prim);
 
 private:
     int maxPrimitiveNode;
     std::vector<Primitive> _primitives;
-    LinearBVHNode* nodes = nullptr;
+    LinearBVHNode<BV>* nodes = nullptr;
     //int _totalNodes = 0;
     SplitMethod _splitType;
 };
