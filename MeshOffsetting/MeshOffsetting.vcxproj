@@ -28,7 +28,6 @@
     <ClInclude Include="include\MeshOffseting.h" />
     <ClInclude Include="include\SSBVH.h" />
     <ClInclude Include="include\SSV.h" />
-    <ClInclude Include="include\标头.h" />
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="..\..\Algorithm Library\src\mymesh.cpp" />

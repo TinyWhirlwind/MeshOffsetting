@@ -24,9 +24,9 @@ BVH<Primitive>::BVH(std::vector<Primitive> prims, int maxPrimitiveNode, SplitMet
 
     }
 
-    BVHNode* rootNode = new BVHNode();
+    BVHNode* rootNode = nullptr;
     std::atomic<int> totalNodes{ 0 };
-    std::vector<Primitive> orderedPrims;
+    std::vector<Primitive> orderedPrims(_primitives.size());
     if (type == HLBVH)
     {
         
@@ -160,7 +160,6 @@ BVHNode* BVH<Primitive>::buildBVH(std::span<BVHPrimitive> primitives, std::atomi
 
     //float bestCost = primitives.size() * 1.0f;
     float nodeSA = boxSum.SurfaceArea();
-    orderedPrims.resize(primitives.size());
     if (nodeSA < epsilon || primitives.size() == 1)
     {
         int leafOffset = orderedPrimsOffset->fetch_add(primitives.size());
@@ -190,7 +189,7 @@ BVHNode* BVH<Primitive>::buildBVH(std::span<BVHPrimitive> primitives, std::atomi
                 int index = primitives[i].primitiveIndex;
                 orderedPrims[leafOffset + i] = _primitives[index];
             }
-            node->InitLeaf(leafOffset, primitives.size(), centerBox);
+            node->InitLeaf(leafOffset, primitives.size(), boxSum);
             return node;
         }
         else
