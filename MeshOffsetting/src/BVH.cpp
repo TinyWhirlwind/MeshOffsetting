@@ -68,6 +68,7 @@ float BVH<Primitive>::CalcDistancePointToBound(const Point3m& p, const AABBBox& 
     return dx * dx + dy * dy + dz * dz;
 }
 
+//Schneider et al https://www.geometrictools.com/Documentation/DistancePoint3Triangle3.pdf
 template <class Primitive>
 QueryResult BVH<Primitive>::CalcDistancePointToPrimitive(const Point3m& p, const Primitive& prim)
 {
@@ -76,7 +77,166 @@ QueryResult BVH<Primitive>::CalcDistancePointToPrimitive(const Point3m& p, const
     result.id = -1;
     if constexpr (std::is_same_v<Primitive, CFaceO>)
     { 
+        CFaceO m;
+        Point3m B = m.P(0);
+        Point3m e0 = m.P(1) - m.P(0);
+        Point3m e1 = m.P(2) - m.P(0);
+        float a = e0 * e0;
+        float b = e0 * e1;
+        float c = e1 * e1;
+        float d = e0 * (B - p);
+        float e = -e1 * (B - p);
+        float f = (B - p) * (B - p);
+
+        float det = a * c - b * b;
+        float s = b * e - c * d;
+        float t = b * d - a * e;
+        float tc = a + d - b - e;
+
+        QueryResult distFunc = [a, b, c, d, e, f](float ss, float tt)
+            {
+                return a * ss * ss + 2 * b * ss * tt + c * tt * tt + 2 * d * ss + 2 * e * tt + f;
+            };
+
+        int region = -1;
+        if (s + t <= det)
+        {
+            //s /= det;
+            //t /= det;
+            if (s < 0)
+            {
+                if (t < 0)
+                {
+                    //region 4
+                    region = 4;
+                }
+                else
+                {
+                    //region 3
+                    region = 3;
+                }
+            }
+            else
+            {
+                if (t < 0)
+                {
+                    //region 5
+                    region = 5;
+                }
+                else
+                {
+                    //region 0
+                    region = 0;
+                }
+            }
+        }
+        else
+        {
+            if (s < 0)
+            {
+                if (t < 0)
+                {
+                    //region 4
+                    region = 4;
+                }
+                else
+                {
+                    //region 3
+                    region = 3;
+                }
+            }
+            else
+            {
+                if (s < 0)
+                {
+                    //region 2
+                    region = 2;
+                }
+                else if(t<0)
+                {
+                    //region 6
+                    region = 6;
+                }
+                else
+                {
+                    //region 1
+                    region = 1;
+                }
+            }
+        }
+
+        switch (region)
+        {
+        case 0:
+        {
+            if (tc < 0)
+            {
+                return distFunc(1, 0);
+            }
+            else if (tc <= 1 && tc >= 0)
+            {
+                tc = tc / (a + c - 2 * b);
+                return distFunc(1 - tc, tc);
+            }
+            else
+            {
+                return distFunc(0, 1);
+            }
+            break;
+        }
+        case 1:
+        {
+            if (tc < 0)
+            {
+                return distFunc(1, 0);
+            }
+            else if (tc <= 1 && tc >= 0)
+            {
+                tc = tc / (a + c - 2 * b);
+                return distFunc(1 - tc, tc);
+            }
+            else
+            {
+                return distFunc(0, 1);
+            }
+            break;
+        }
+        case 2:
+        {
+            /*if (tc < 1)
+            {
+                return distFunc(0, 1);
+            }
+            else
+            {
+                tc = tc / (a + c - 2 * b);
+                return distFunc(1 - tc, tc);
+            }
+            break;*/
+        }
+        case 3:
+        {
+
+            break;
+        }
+        case 4:
+        {
+            break;
+        }
+        case 5:
+        {
+            break;
+        }
+        case 6:
+        {
+            break;
+        }
+        default:
+            break;
+        }
     }
+    
+
     return result;
 }
 
