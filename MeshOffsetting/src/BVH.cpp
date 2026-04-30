@@ -196,13 +196,14 @@ QueryResult BVH<Primitive>::CalcDistancePointToPrimitive(const Point3m& p, const
                 return distFunc(1 - tc, tc);
             }
             else
-            {
+            {git
                 return distFunc(0, 1);
             }
             break;
         }
-        case 2:
+        case 2: 
         {
+            
             /*if (tc < 1)
             {
                 return distFunc(0, 1);
