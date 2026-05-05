@@ -10,10 +10,10 @@ enum BV
     RSS,
 };
 template <class Primitive>
-class SSBVH : public BVH<Primitive>
+class SSVH : public BVH<Primitive>
 {
 public:
-    SSBVH(const std::vector<Primitive>& primitives, int maxLeafSize = 4) : BVH<Primitive>(primitives, maxLeafSize) {}
+    SSVH(const std::vector<Primitive>& primitives, int maxLeafSize = 4) : BVH<Primitive>(primitives, maxLeafSize) {}
     virtual ~SSBVH() {}
 };
-#endif
+#endif    

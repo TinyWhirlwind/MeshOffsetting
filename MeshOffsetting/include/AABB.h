@@ -22,7 +22,7 @@ public:
         return result;
     }
 
-    Point3m NormalizePointToBounds(Point3m p)
+    Point3m NormalizePointToBounds(const Point3m& p) const
     {
         Point3m vec = p - this->min;
         if (this->max.X() > this->min.X())

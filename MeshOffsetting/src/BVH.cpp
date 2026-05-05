@@ -3,6 +3,26 @@
 #include <thread>
 #include <algorithm>
 #include <utility>
+#include <limits>
+#include <type_traits>
+#include <cmath>
+
+namespace
+{
+    template <class Primitive>
+    decltype(auto) PrimitiveRef(const Primitive& primitive)
+    {
+        if constexpr (std::is_pointer_v<Primitive>)
+        {
+            assert(primitive != nullptr);
+            return *primitive;
+        }
+        else
+        {
+            return (primitive);
+        }
+    }
+}
 
 template <class Primitive>
 BVH<Primitive>::BVH(std::vector<Primitive> prims, int maxPrimitiveNode, SplitMethod type) :
@@ -12,7 +32,8 @@ BVH<Primitive>::BVH(std::vector<Primitive> prims, int maxPrimitiveNode, SplitMet
     bvhPrimitives.resize(_primitives.size());
     for (int i = 0; i < _primitives.size(); ++i)
     {
-        AABBBox ibox = _primitives[i].GetBBox();
+        AABBBox ibox;
+        PrimitiveRef(_primitives[i]).GetBBox(ibox);
         bvhPrimitives[i] = BVHPrimitive(i, ibox);
         
         /*std::pmr::monotonic_buffer_resource resource;
@@ -73,171 +94,125 @@ template <class Primitive>
 QueryResult BVH<Primitive>::CalcDistancePointToPrimitive(const Point3m& p, const Primitive& prim)
 {
     QueryResult result{};
-    result.dist = FLT_MAX;
+    result.dist = std::numeric_limits<double>::max();
     result.id = -1;
-    if constexpr (std::is_same_v<Primitive, CFaceO>)
-    { 
-        CFaceO m;
-        Point3m B = m.P(0);
-        Point3m e0 = m.P(1) - m.P(0);
-        Point3m e1 = m.P(2) - m.P(0);
-        float a = e0 * e0;
-        float b = e0 * e1;
-        float c = e1 * e1;
-        float d = e0 * (B - p);
-        float e = -e1 * (B - p);
-        float f = (B - p) * (B - p);
+    result.sign = 0;
+    result.intersected = false;
+    result.s = 0;
+    result.t = 0;
+    using PrimitiveValue = std::remove_cv_t<std::remove_pointer_t<Primitive>>;
+    if constexpr (std::is_same_v<PrimitiveValue, CFaceO>)
+    {
+        const auto& face = PrimitiveRef(prim);
+        const Point3m a = face.P(0);
+        const Point3m b = face.P(1);
+        const Point3m c = face.P(2);
 
-        float det = a * c - b * b;
-        float s = b * e - c * d;
-        float t = b * d - a * e;
-        float tc = a + d - b - e;
-
-        QueryResult distFunc = [a, b, c, d, e, f](float ss, float tt)
+        auto setResult = [&](Scalarm s, Scalarm t)
             {
-                return a * ss * ss + 2 * b * ss * tt + c * tt * tt + 2 * d * ss + 2 * e * tt + f;
+                result.s = s;
+                result.t = t;
+                result.closestPoint = a + (b - a) * s + (c - a) * t;
+                const Point3m diff = p - result.closestPoint;
+                result.dist = diff * diff;
+                result.intersected = result.dist <= epsilon;
             };
 
-        int region = -1;
-        if (s + t <= det)
+        const Point3m ab = b - a;
+        const Point3m ac = c - a;
+        const Point3m ap = p - a;
+
+        const Scalarm d1 = ab * ap;
+        const Scalarm d2 = ac * ap;
+        if (d1 <= 0 && d2 <= 0)
         {
-            //s /= det;
-            //t /= det;
-            if (s < 0)
-            {
-                if (t < 0)
-                {
-                    //region 4
-                    region = 4;
-                }
-                else
-                {
-                    //region 3
-                    region = 3;
-                }
-            }
-            else
-            {
-                if (t < 0)
-                {
-                    //region 5
-                    region = 5;
-                }
-                else
-                {
-                    //region 0
-                    region = 0;
-                }
-            }
+            setResult(0, 0);
+            return result;
+        }
+
+        const Point3m bp = p - b;
+        const Scalarm d3 = ab * bp;
+        const Scalarm d4 = ac * bp;
+        if (d3 >= 0 && d4 <= d3)
+        {
+            setResult(1, 0);
+            return result;
+        }
+
+        const Scalarm vc = d1 * d4 - d3 * d2;
+        if (vc <= 0 && d1 >= 0 && d3 <= 0)
+        {
+            const Scalarm denom = d1 - d3;
+            const Scalarm v = denom > epsilon ? d1 / denom : 0;
+            setResult(v, 0);
+            return result;
+        }
+
+        const Point3m cp = p - c;
+        const Scalarm d5 = ab * cp;
+        const Scalarm d6 = ac * cp;
+        if (d6 >= 0 && d5 <= d6)
+        {
+            setResult(0, 1);
+            return result;
+        }
+
+        const Scalarm vb = d5 * d2 - d1 * d6;
+        if (vb <= 0 && d2 >= 0 && d6 <= 0)
+        {
+            const Scalarm denom = d2 - d6;
+            const Scalarm w = denom > epsilon ? d2 / denom : 0;
+            setResult(0, w);
+            return result;
+        }
+
+        const Scalarm va = d3 * d6 - d5 * d4;
+        if (va <= 0 && (d4 - d3) >= 0 && (d5 - d6) >= 0)
+        {
+            const Scalarm denom = (d4 - d3) + (d5 - d6);
+            const Scalarm w = denom > epsilon ? (d4 - d3) / denom : 0;
+            setResult(1 - w, w);
+            return result;
+        }
+
+        const Scalarm denom = va + vb + vc;
+        if (std::abs(denom) > epsilon)
+        {
+            const Scalarm v = vb / denom;
+            const Scalarm w = vc / denom;
+            setResult(v, w);
         }
         else
         {
-            if (s < 0)
+            auto setSegmentResult = [&](const Point3m& p0, const Point3m& p1, Scalarm s0, Scalarm t0, Scalarm s1, Scalarm t1)
             {
-                if (t < 0)
-                {
-                    //region 4
-                    region = 4;
-                }
-                else
-                {
-                    //region 3
-                    region = 3;
-                }
-            }
-            else
-            {
-                if (s < 0)
-                {
-                    //region 2
-                    region = 2;
-                }
-                else if(t<0)
-                {
-                    //region 6
-                    region = 6;
-                }
-                else
-                {
-                    //region 1
-                    region = 1;
-                }
-            }
-        }
+                const Point3m edge = p1 - p0;
+                const Scalarm len2 = edge * edge;
+                Scalarm u = len2 > epsilon ? ((p - p0) * edge) / len2 : 0;
+                u = std::clamp(u, Scalarm(0), Scalarm(1));
 
-        switch (region)
-        {
-        case 0:
-        {
-            if (tc < 0)
-            {
-                return distFunc(1, 0);
-            }
-            else if (tc <= 1 && tc >= 0)
-            {
-                tc = tc / (a + c - 2 * b);
-                return distFunc(1 - tc, tc);
-            }
-            else
-            {
-                return distFunc(0, 1);
-            }
-            break;
-        }
-        case 1:
-        {
-            if (tc < 0)
-            {
-                return distFunc(1, 0);
-            }
-            else if (tc <= 1 && tc >= 0)
-            {
-                tc = tc / (a + c - 2 * b);
-                return distFunc(1 - tc, tc);
-            }
-            else
-            {git
-                return distFunc(0, 1);
-            }
-            break;
-        }
-        case 2: 
-        {
-            
-            /*if (tc < 1)
-            {
-                return distFunc(0, 1);
-            }
-            else
-            {
-                tc = tc / (a + c - 2 * b);
-                return distFunc(1 - tc, tc);
-            }
-            break;*/
-        }
-        case 3:
-        {
+                QueryResult candidate{};
+                candidate.id = -1;
+                candidate.sign = 0;
+                candidate.intersected = false;
+                candidate.s = s0 + (s1 - s0) * u;
+                candidate.t = t0 + (t1 - t0) * u;
+                candidate.closestPoint = p0 + edge * u;
+                const Point3m diff = p - candidate.closestPoint;
+                candidate.dist = diff * diff;
+                candidate.intersected = candidate.dist <= epsilon;
+                if (candidate.dist < result.dist)
+                {
+                    result = candidate;
+                }
+            };
 
-            break;
-        }
-        case 4:
-        {
-            break;
-        }
-        case 5:
-        {
-            break;
-        }
-        case 6:
-        {
-            break;
-        }
-        default:
-            break;
+            setSegmentResult(a, b, 0, 0, 1, 0);
+            setSegmentResult(a, c, 0, 0, 0, 1);
+            setSegmentResult(b, c, 1, 0, 0, 1);
         }
     }
     
-
     return result;
 }
 
@@ -316,7 +291,7 @@ BVHNode* BVH<Primitive>::buildBVH(std::span<BVHPrimitive> primitives, std::atomi
     AABBBox boxSum;
     for (const auto& it : primitives)
     {
-        boxSum.Add(it->bound);
+        boxSum.Add(it.bound);
     }
 
     //float bestCost = primitives.size() * 1.0f;
@@ -450,8 +425,8 @@ BVHNode* BVH<Primitive>::buildBVH(std::span<BVHPrimitive> primitives, std::atomi
                         auto midIter = std::partition(primitives.begin(), primitives.end(),
                             [=](const BVHPrimitive& perBounds)
                             {
-                                int index = nBucket * centerBox.NormalizePointToBounds(perBounds.Centroid())[dim];
-                                if (index == nBucket) index == nBucket - 1;
+                                int index = nBucket* centerBox.NormalizePointToBounds(perBounds.Centroid())[dim];
+                                if (index == nBucket) index = nBucket - 1;
                                 return index <= minCostSplitBucket;
                             });
                         mid = midIter - primitives.begin();
@@ -530,3 +505,5 @@ int BVH<Primitive>::flattenBVH(BVHNode* node, int* offset)
     }
     return nodeOffset;
 }
+
+template class BVH<CFaceO*>;

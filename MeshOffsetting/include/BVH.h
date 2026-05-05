@@ -20,12 +20,13 @@ struct SplitBucket
 class BVHPrimitive
 {
 public:
+    BVHPrimitive() = default;
     BVHPrimitive(int i, AABBBox box) :primitiveIndex(i), bound(box)
     {
     }
     ~BVHPrimitive() {};
 
-    int primitiveIndex;
+    int primitiveIndex = -1;
     AABBBox bound;
     Point3m Centroid() const
     {
@@ -73,12 +74,15 @@ public:
 
 struct QueryResult
 {
-    double dist;
+	double dist;//squared distance
     int sign;//0/1/-1
     bool intersected;
     MESHLAB_SCALAR s, t; //barycentric coordinates
     Point3m closestPoint;
-    int id;
+    int id;//triangle index
+};
+struct HitResult
+{ 
 
 };
 
@@ -90,6 +94,8 @@ public:
     ~BVH();
 
     void QueryClosestPoint(const Point3m& p, QueryResult& result);
+    bool Intersect(const Ray3m& ray, HitResult& hit);//Not define.
+    bool IntersectAny(const Ray3m& ray);//Not define.
     //static BVH* Create(std::vector<Primitive> primitives);
     //bool IntersectP(const Ray3m& ray, float t);
 
