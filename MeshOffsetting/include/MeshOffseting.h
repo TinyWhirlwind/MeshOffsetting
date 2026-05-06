@@ -1,7 +1,7 @@
 #ifndef _MESH_OFFSETING_H_
 #define _MESH_OFFSETING_H_
 #include "mymesh.h"
-#include "Grid.h"
+#include "OffsetGrid.h"
 #define Scalarm double
 class MeshOffseting
 {

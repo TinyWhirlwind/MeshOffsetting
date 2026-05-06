@@ -89,7 +89,6 @@ float BVH<Primitive>::CalcDistancePointToBound(const Point3m& p, const AABBBox& 
     return dx * dx + dy * dy + dz * dz;
 }
 
-//Schneider et al https://www.geometrictools.com/Documentation/DistancePoint3Triangle3.pdf
 template <class Primitive>
 QueryResult BVH<Primitive>::CalcDistancePointToPrimitive(const Point3m& p, const Primitive& prim)
 {

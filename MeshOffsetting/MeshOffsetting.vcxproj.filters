@@ -27,9 +27,12 @@
     <ClCompile Include="src\BVH.cpp">
       <Filter>源文件</Filter>
     </ClCompile>
+    <ClCompile Include="src\OffsetGrid.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
-    <ClInclude Include="include\Grid.h">
+    <ClInclude Include="include\OffsetGrid.h">
       <Filter>头文件</Filter>
     </ClInclude>
     <ClInclude Include="include\MeshOffseting.h">
@@ -38,19 +41,13 @@
     <ClInclude Include="..\..\Algorithm Library\include\mymesh.h">
       <Filter>头文件</Filter>
     </ClInclude>
-    <ClInclude Include="include\GridTraits.h">
-      <Filter>头文件</Filter>
-    </ClInclude>
-    <ClInclude Include="include\KdTree.h">
-      <Filter>头文件</Filter>
-    </ClInclude>
     <ClInclude Include="include\BVH.h">
       <Filter>头文件</Filter>
     </ClInclude>
     <ClInclude Include="include\AABB.h">
       <Filter>头文件</Filter>
     </ClInclude>
-    <ClInclude Include="include\SSBVH.h">
+    <ClInclude Include="include\SSVH.h">
       <Filter>头文件</Filter>
     </ClInclude>
     <ClInclude Include="include\SSV.h">
