@@ -25,7 +25,6 @@
     <ClInclude Include="include\OffsetGrid.h" />
     <ClInclude Include="include\MeshOffseting.h" />
     <ClInclude Include="include\SSVH.h" />
-    <ClInclude Include="include\SSV.h" />
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="..\..\Algorithm Library\src\mymesh.cpp" />

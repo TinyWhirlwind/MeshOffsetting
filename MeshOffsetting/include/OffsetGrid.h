@@ -9,9 +9,16 @@ public:
     enum NodeState
     {
         NodeUnknown = 0,
-            NodeDistanceReady
-            //NodeInvalid,
-            //NodeValid
+        NodeDistanceReady
+
+        //NodeInvalid,
+        //BlockRetained
+    };
+    enum BlockState
+    {
+        BlockUnknown = 0,
+        BlockRetained,
+        BlockInvalid
     };
 
     struct NodeData
@@ -26,21 +33,44 @@ public:
             unsignedDistance(0), 
             signedDistance(0), 
             hasUnsignedDistance(false), 
-            unsignedDistance(false) 
+            hasSignedDistance(false) 
         {}
+    };
+    struct BlockData
+    {
+        BlockState state;
+        Point3i minCell;
+        Point3i cellSpan;
+        ScalarType radiusSq;
+        Point3m center;
+        BlockData() :
+            state(BlockState::BlockUnknown),
+            cellSpan(0,0,0),
+            minCell(0,0,0),
+            center(0, 0, 0),
+            radiusSq(0)
+        {
+        }
+
+       BlockData(ScalarType rsq) :
+            state(BlockState::BlockUnknown),
+            cellSpan(0,0,0),
+            minCell(0,0,0),
+           radiusSq(rsq)
+        {
+        }
     };
 
     OffsetGrid(ScalarType offset_value, ScalarType cell_width);
     ~OffsetGrid();
-
+    //------------------------------Grid-------------------------------------------
     void Init(const Box3m& bbox, ScalarType cell_width, ScalarType offset_value);
     void Init(const Box3m& bbox, const Point3i cell_count, ScalarType offset_value);
-
     ScalarType OffsetValue() const;
     ScalarType CellWidth() const;
     Point3i NodeDims() const;
     size_t NodeCount() const;
-    bool IsValidNodeCoord(const Point3i& p) const;
+    bool IsVaildNodeCoord(const Point3i& p) const;
     size_t NodeIndex(const Point3i& p) const;
     NodeData& Node(const Point3i& p);
     const NodeData& Node(const Point3i& p) const;
@@ -60,8 +90,42 @@ public:
     template<class Func>
     void ForEachNode(Func fn) const;
 
+    //------------------------------Block-------------------------------------------
+    void BuildBlocks();
+    void ResetBlocks();
+
+    bool IsVaildBlockCoord(const Point3i& p) const; 
+    size_t BlockIndex(const Point3i& p) const;
+
+    BlockData& Block(const Point3i& p);
+    const BlockData& Block(const Point3i& p) const;
+
+    int BlockSide() const;
+    Point3i BlockDims() const;
+    size_t BlockCount() const;
+
+    Point3m BlockCenter(const BlockData& block);
+    ScalarType BlockCircumsphereRadiusSq(const BlockData& block) const;
+
+    void SetBlockState(const Point3i& p, BlockState s);
+    BlockState GetBlockState(const Point3i& p) const;
+    bool IsBlockInvalid(const Point3i& p) const;
+    bool IsBlockRetained(const Point3i& p) const;
+
+    template<class Func>
+    void ForEachNodeInBlock(const Point3i& bp, Func fn) const;
+
+private:
+    int EstimateBlockCount(const ScalarType cell_width, const ScalarType offset_value) const;
+
 private:
     ScalarType _offsetValue;
     ScalarType _cellWidth;
     std::vector<NodeData> _nodes;
+
+    int _blockSide;
+    size_t _blockCount;
+    Point3i _blockDim;
+    std::vector<BlockData> _blocks;
+    
 };
