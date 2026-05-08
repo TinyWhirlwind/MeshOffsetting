@@ -73,7 +73,7 @@ BVH<Primitive>::~BVH()
 }
 
 template <class Primitive>
-float BVH<Primitive>::CalcDistancePointToBound(const Point3m& p, const AABBBox& box)
+float BVH<Primitive>::CalcDistancePointToBound(const Point3m& p, const AABBBox& box) const
 {
     Scalarm dx = 0, dy = 0, dz = 0;
 
@@ -86,11 +86,11 @@ float BVH<Primitive>::CalcDistancePointToBound(const Point3m& p, const AABBBox& 
     if (p.Z() < box.min.Z()) dz = box.min.Z() - p.Z();
     else if (p.Z() > box.max.Z()) dz = p.Z() - box.max.Z();
 
-    return dx * dx + dy * dy + dz * dz;
+    return std::sqrt(dx * dx + dy * dy + dz * dz);
 }
 
 template <class Primitive>
-QueryResult BVH<Primitive>::CalcDistancePointToPrimitive(const Point3m& p, const Primitive& prim)
+QueryResult BVH<Primitive>::CalcDistancePointToPrimitive(const Point3m& p, const Primitive& prim) const
 {
     QueryResult result;
     using PrimitiveValue = std::remove_cv_t<std::remove_pointer_t<Primitive>>;
@@ -210,7 +210,7 @@ QueryResult BVH<Primitive>::CalcDistancePointToPrimitive(const Point3m& p, const
 }
 
 template <class Primitive>
-void BVH<Primitive>::QueryClosestPoint(const Point3m& p, QueryResult& result)
+void BVH<Primitive>::QueryClosestPoint(const Point3m& p, QueryResult& result) const
 {
     assert(nodes != nullptr);
     float minDistance = FLT_MAX;

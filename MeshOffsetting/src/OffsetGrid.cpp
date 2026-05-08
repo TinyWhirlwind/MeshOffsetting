@@ -143,6 +143,33 @@ ScalarType OffsetGrid<ScalarType>::SignedDistance(const Point3i& p) const
 }
 
 template <class ScalarType>
+void OffsetGrid<ScalarType>::SetNodeState(const Point3i& p, NodeState s)
+{
+    Node(p).state = s;
+}
+
+template <class ScalarType>
+typename OffsetGrid<ScalarType>::NodeState OffsetGrid<ScalarType>::GetNodeState(const Point3i& p) const
+{
+    return Node(p).state;
+}
+
+template <class ScalarType>
+void OffsetGrid<ScalarType>::SetNodeInvalid(const Point3i& p)
+{
+    NodeData& node = Node(p);
+    node.state = NodeState::NodeInvalid;
+    node.hasUnsignedDistance = false;
+    node.hasSignedDistance = false;
+}
+
+template <class ScalarType>
+bool OffsetGrid<ScalarType>::IsNodeInvalid(const Point3i& p) const
+{
+    return GetNodeState(p) == NodeState::NodeInvalid;
+}
+
+template <class ScalarType>
 bool OffsetGrid<ScalarType>::IsNodeInNarrowBand(const Point3i& p) const
 {
     const NodeData& n = Node(p);

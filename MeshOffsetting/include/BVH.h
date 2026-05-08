@@ -96,7 +96,8 @@ public:
     BVH& operator=(const BVH&) = delete;
     ~BVH();
 
-    void QueryClosestPoint(const Point3m& p, QueryResult& result);
+    void QueryClosestPoint(const Point3m& p, QueryResult& result) const;
+    
     bool Intersect(const Ray3m& ray, HitResult& hit);//Not define.
     bool IntersectAny(const Ray3m& ray);//Not define.
     //static BVH* Create(std::vector<Primitive> primitives);
@@ -115,8 +116,8 @@ private:
     int flattenBVH(BVHNode* node, int* offset);
     unsigned int calcSplit(BVHNode* node);
 
-    float CalcDistancePointToBound(const Point3m& p, const AABBBox& box);
-    QueryResult CalcDistancePointToPrimitive(const Point3m& p, const Primitive& prim);
+    float CalcDistancePointToBound(const Point3m& p, const AABBBox& box) const;
+    QueryResult CalcDistancePointToPrimitive(const Point3m& p, const Primitive& prim) const;
 
 private:
     int maxPrimitiveNode;

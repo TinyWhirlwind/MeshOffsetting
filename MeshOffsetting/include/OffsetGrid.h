@@ -88,6 +88,11 @@ public:
     //判断 node 是否在 offset 窄带附近
     bool IsNodeInNarrowBand(const Point3i& p) const;
 
+    void SetNodeState(const Point3i& p, NodeState s);
+    NodeState GetNodeState(const Point3i& p) const;
+    void SetNodeInvalid(const Point3i& p);
+    bool IsNodeInvalid(const Point3i& p) const;
+
     template<class Func>
     void ForEachNode(Func fn) const
     {
