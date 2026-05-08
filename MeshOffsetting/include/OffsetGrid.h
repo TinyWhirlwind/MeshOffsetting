@@ -1,3 +1,4 @@
+#pragma once
 #include "mymesh.h"
 #include <base_type.h>
 #include <vcg/space/index/grid_util.h>
@@ -9,7 +10,8 @@ public:
     enum NodeState
     {
         NodeUnknown = 0,
-        NodeDistanceReady
+        NodeDistanceReady,
+        NodeInvalid
 
         //NodeInvalid,
         //BlockRetained
@@ -41,14 +43,14 @@ public:
         BlockState state;
         Point3i minCell;
         Point3i cellSpan;
-        ScalarType radiusSq;
+        ScalarType radius;
         Point3m center;
         BlockData() :
             state(BlockState::BlockUnknown),
             cellSpan(0,0,0),
             minCell(0,0,0),
             center(0, 0, 0),
-            radiusSq(0)
+            radius(0)
         {
         }
 
@@ -56,16 +58,14 @@ public:
             state(BlockState::BlockUnknown),
             cellSpan(0,0,0),
             minCell(0,0,0),
-           radiusSq(rsq)
+           radius(rsq)
         {
         }
     };
 
-    OffsetGrid(ScalarType offset_value, ScalarType cell_width);
+    OffsetGrid(const Box3m& bbox, ScalarType cell_width, ScalarType offset_value);
     ~OffsetGrid();
     //------------------------------Grid-------------------------------------------
-    void Init(const Box3m& bbox, ScalarType cell_width, ScalarType offset_value);
-    void Init(const Box3m& bbox, const Point3i cell_count, ScalarType offset_value);
     ScalarType OffsetValue() const;
     ScalarType CellWidth() const;
     Point3i NodeDims() const;
@@ -87,9 +87,22 @@ public:
     ScalarType SignedDistance(const Point3i& p) const;
     //判断 node 是否在 offset 窄带附近
     bool IsNodeInNarrowBand(const Point3i& p) const;
-    template<class Func>
-    void ForEachNode(Func fn) const;
 
+    template<class Func>
+    void ForEachNode(Func fn) const
+    {
+        const Point3i dim = NodeDims();
+        for (int i = 0; i < dim[0]; ++i)
+        {
+            for (int j = 0; j < dim[1]; ++j)
+            {
+                for (int k = 0; k < dim[2]; ++k)
+                {
+                    fn(Point3i(i, j, k));
+                }
+            }
+        }
+    }
     //------------------------------Block-------------------------------------------
     void BuildBlocks();
     void ResetBlocks();
@@ -105,7 +118,7 @@ public:
     size_t BlockCount() const;
 
     Point3m BlockCenter(const BlockData& block);
-    ScalarType BlockCircumsphereRadiusSq(const BlockData& block) const;
+    ScalarType BlockCircumsphereRadius(const BlockData& block) const;
 
     void SetBlockState(const Point3i& p, BlockState s);
     BlockState GetBlockState(const Point3i& p) const;
@@ -113,7 +126,37 @@ public:
     bool IsBlockRetained(const Point3i& p) const;
 
     template<class Func>
-    void ForEachNodeInBlock(const Point3i& bp, Func fn) const;
+    void ForEachBlock(Func fn) const
+    {
+        const Point3i dim = BlockDims();
+        for (int i = 0; i < dim[0]; ++i)
+        {
+            for (int j = 0; j < dim[1]; ++j)
+            {
+                for (int k = 0; k < dim[2]; ++k)
+                {
+                    fn(Point3i(i, j, k));
+                }
+            }
+        }
+    }
+
+    template<class Func>
+    void ForEachNodeInBlock(const Point3i& bp, Func fn) const
+    {
+        const BlockData& b = Block(bp);
+
+        for (int i = b.minCell[0]; i <= b.minCell[0] + b.cellSpan[0]; ++i)
+        {
+            for (int j = b.minCell[1]; j <= b.minCell[1] + b.cellSpan[1]; ++j)
+            {
+                for (int k = b.minCell[2]; k <= b.minCell[2] + b.cellSpan[2]; ++k)
+                {
+                    fn(Point3i(i, j, k));
+                }
+            }
+        }
+    }
 
 private:
     int EstimateBlockCount(const ScalarType cell_width, const ScalarType offset_value) const;

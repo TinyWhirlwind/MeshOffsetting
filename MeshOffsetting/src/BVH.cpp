@@ -92,13 +92,7 @@ float BVH<Primitive>::CalcDistancePointToBound(const Point3m& p, const AABBBox& 
 template <class Primitive>
 QueryResult BVH<Primitive>::CalcDistancePointToPrimitive(const Point3m& p, const Primitive& prim)
 {
-    QueryResult result{};
-    result.dist = std::numeric_limits<double>::max();
-    result.id = -1;
-    result.sign = 0;
-    result.intersected = false;
-    result.s = 0;
-    result.t = 0;
+    QueryResult result;
     using PrimitiveValue = std::remove_cv_t<std::remove_pointer_t<Primitive>>;
     if constexpr (std::is_same_v<PrimitiveValue, CFaceO>)
     {
@@ -113,7 +107,7 @@ QueryResult BVH<Primitive>::CalcDistancePointToPrimitive(const Point3m& p, const
                 result.t = t;
                 result.closestPoint = a + (b - a) * s + (c - a) * t;
                 const Point3m diff = p - result.closestPoint;
-                result.dist = diff * diff;
+                result.dist = std::sqrt(diff * diff);
                 result.intersected = result.dist <= epsilon;
             };
 
@@ -198,7 +192,7 @@ QueryResult BVH<Primitive>::CalcDistancePointToPrimitive(const Point3m& p, const
                 candidate.t = t0 + (t1 - t0) * u;
                 candidate.closestPoint = p0 + edge * u;
                 const Point3m diff = p - candidate.closestPoint;
-                candidate.dist = diff * diff;
+                candidate.dist = std::sqrt(diff * diff);
                 candidate.intersected = candidate.dist <= epsilon;
                 if (candidate.dist < result.dist)
                 {
@@ -278,7 +272,7 @@ void BVH<Primitive>::QueryClosestPoint(const Point3m& p, QueryResult& result)
         }
     }
     
-    //result.sign = (p - result.closestPoint) * _primitives[result.id].N() > 0 ? 1 : 0;
+    result.sign = (p - result.closestPoint) * _primitives[result.id]->N() > 0 ? 1 : -1;//封闭模型大致判断，非封闭还要额外判断
     return;
 }
 

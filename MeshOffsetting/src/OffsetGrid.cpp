@@ -2,20 +2,11 @@
 #include <algorithm>
 #include <math.h>
 template <class ScalarType>
-OffsetGrid<ScalarType>::OffsetGrid(ScalarType offset_value, ScalarType cell_width) :
-    _offsetValue(offset_value), _cellWidth(cell_width)
-{
-}
-
-template <class ScalarType>
-OffsetGrid<ScalarType>::~OffsetGrid() {};
-
-template <class ScalarType>
-void OffsetGrid<ScalarType>::Init(const Box3m& bbox, ScalarType cell_width, ScalarType offset_value)
+OffsetGrid<ScalarType>::OffsetGrid(const Box3m& bbox, ScalarType cell_width, ScalarType offset_value)
 {
     assert(cell_width > ScalarType(0));
 
-    Point3i cell_count(1,1,1);
+    Point3i cell_count(1, 1, 1);
     Box3m real_bbox = bbox;
     const Point3<ScalarType> size = bbox.max - bbox.min;
     for (int i = 0; i < 3; ++i)
@@ -23,23 +14,20 @@ void OffsetGrid<ScalarType>::Init(const Box3m& bbox, ScalarType cell_width, Scal
         cell_count[i] = std::max(1, int(std::ceil(size[i] / cell_width)));
         real_bbox.max[i] = real_bbox.min[i] + ScalarType(cell_count[i]) * cell_width;
     }
-    Init(real_bbox, cell_count, offset_value);
-}
-
-template <class ScalarType>
-void OffsetGrid<ScalarType>::Init(const Box3m& bbox, const Point3i cell_count, ScalarType offset_value)
-{
     assert(cell_count[0] > 0);
     assert(cell_count[1] > 0);
     assert(cell_count[2] > 0);
-
-    this->bbox = bbox;
+    this->bbox.max = real_bbox.max;
+    this->bbox.min = real_bbox.min;
     this->siz = cell_count;
     this->ComputeDimAndVoxel();
     _offsetValue = offset_value;
-    _cellWidth = this->voxel;
+    _cellWidth = this->voxel[0];
     _nodes.assign(NodeCount(), NodeData());
 }
+
+template <class ScalarType>
+OffsetGrid<ScalarType>::~OffsetGrid() {};
 
 template <class ScalarType>
 ScalarType OffsetGrid<ScalarType>::OffsetValue() const
@@ -106,9 +94,9 @@ template <class ScalarType>
 Point3m OffsetGrid<ScalarType>::NodePosition(const Point3i& p) const
 {
     return Point3m(
-        this->bbox.min[0] + p[0] * this->voxel,
-        this->bbox.min[1] + p[1] * this->voxel,
-        this->bbox.min[2] + p[2] * this->voxel
+        this->bbox.min[0] + p[0] * this->voxel[0],
+        this->bbox.min[1] + p[1] * this->voxel[1],
+        this->bbox.min[2] + p[2] * this->voxel[2]
     );
 }
 
@@ -155,29 +143,11 @@ ScalarType OffsetGrid<ScalarType>::SignedDistance(const Point3i& p) const
 }
 
 template <class ScalarType>
-//判断 node 是否在 offset 窄带附近
 bool OffsetGrid<ScalarType>::IsNodeInNarrowBand(const Point3i& p) const
 {
     const NodeData& n = Node(p);
     assert(n.hasSignedDistance);
     return std::abs(n.signedDistance - _offsetValue) <= _cellWidth;
-}
-
-template <class ScalarType>
-template<class Func>
-void OffsetGrid<ScalarType>::ForEachNode(Func fn) const
-{
-    const Point3i dim = NodeDims();
-    for (int i = 0; i < dim[0]; ++i)
-    {
-        for (int j = 0; j < dim[1]; ++j)
-        {
-            for (int k = 0; k < dim[2]; ++k)
-            {
-                fn(Point3i(i, j, k));
-            }
-        }
-    }
 }
 
 template <class ScalarType>
@@ -191,7 +161,7 @@ void OffsetGrid<ScalarType>::BuildBlocks()
     _blocks.clear();
     _blocks.resize(_blockCount);
     ScalarType radius = std::sqrt(3.0) * _blockSide * _cellWidth * 0.5;
-    _blocks.assign(_blockCount, BlockData(radius* radius));
+    _blocks.assign(_blockCount, BlockData(radius));
 
     for (int i = 0; i < _blockDim[0]; ++i)
     {
@@ -234,7 +204,7 @@ void OffsetGrid<ScalarType>::BuildBlocks()
                     const ScalarType hy = ScalarType(b.cellSpan[1]) * _cellWidth * ScalarType(0.5);
                     const ScalarType hz = ScalarType(b.cellSpan[2]) * _cellWidth * ScalarType(0.5);
 
-                    b.radiusSq = hx * hx + hy * hy + hz * hz;
+                    b.radius = std::sqrt(hx * hx + hy * hy + hz * hz);
                 }
             }
         }
@@ -297,19 +267,13 @@ size_t OffsetGrid<ScalarType>::BlockCount() const
 template <class ScalarType>
 Point3m OffsetGrid<ScalarType>::BlockCenter(const BlockData& block)
 {
-    /*Point3m centerIndex = block.minCell + block.cellSpan * 0.5;
-    Point3m center = Point3m(
-        this->bbox.min[0] + centerIndex[0] * _blockSide * _cellWidth,
-        this->bbox.min[1] + centerIndex[1] * _blockSide *_cellWidth,
-        this->bbox.min[2] + centerIndex[2] * _blockSide *_cellWidth);
-    return center;*/
     return block.center;
 }
 
 template <class ScalarType>
-ScalarType OffsetGrid<ScalarType>::BlockCircumsphereRadiusSq(const BlockData& block) const
+ScalarType OffsetGrid<ScalarType>::BlockCircumsphereRadius(const BlockData& block) const
 {
-    return block.radiusSq;
+    return block.radius;
 }
 
 template <class ScalarType>
@@ -335,25 +299,6 @@ template <class ScalarType>
 bool OffsetGrid<ScalarType>::IsBlockRetained(const Point3i& p) const
 {
     return GetBlockState(p) == BlockState::BlockRetained;
-}
-
-template <class ScalarType>
-template<class Func>
-void OffsetGrid<ScalarType>::ForEachNodeInBlock(const Point3i& bp, Func fn) const
-{
-    const BlockData b = Block(bp);
-    const BlockData& b = Block(bp);
-
-    for (int i = b.minCell[0]; i <= b.minCell[0] + b.cellSpan[0]; ++i)
-    {
-        for (int j = b.minCell[1]; j <= b.minCell[1] + b.cellSpan[1]; ++j)
-        {
-            for (int k = b.minCell[2]; k <= b.minCell[2] + b.cellSpan[2]; ++k)
-            {
-                fn(Point3i(i, j, k));
-            }
-        }
-    }
 }
 
 template <class ScalarType>

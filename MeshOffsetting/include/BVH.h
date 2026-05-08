@@ -74,12 +74,13 @@ public:
 
 struct QueryResult
 {
-	double dist;//squared distance
-    int sign;//0/1/-1
-    bool intersected;
-    MESHLAB_SCALAR s, t; //barycentric coordinates
-    Point3m closestPoint;
-    int id;//triangle index
+	double dist = std::numeric_limits<double>::max();//unsigned distance
+    int sign = 0;//0/1/-1
+    bool intersected = false;
+    MESHLAB_SCALAR s = 0; //barycentric coordinates
+    MESHLAB_SCALAR t = 0; 
+    Point3m closestPoint = Point3m(0, 0, 0);
+    int id = -1;//triangle index
 };
 struct HitResult
 { 
@@ -91,6 +92,8 @@ class BVH
 {
 public:
     BVH(std::vector<Primitive> prims, int maxPrimitiveNode = 1, SplitMethod type = SplitMethod::SAH);
+    BVH(const BVH&) = delete;
+    BVH& operator=(const BVH&) = delete;
     ~BVH();
 
     void QueryClosestPoint(const Point3m& p, QueryResult& result);
