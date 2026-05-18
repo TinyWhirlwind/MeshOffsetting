@@ -1,6 +1,7 @@
 #pragma once
 #include "mymesh.h"
 #include <base_type.h>
+#include <set>
 #include <vcg/space/index/grid_util.h>
 using namespace vcg;
 template <class ScalarType>
@@ -38,6 +39,30 @@ public:
             hasSignedDistance(false) 
         {}
     };
+
+    struct GridEdge
+    {
+        int _p0, _p1;
+        bool isV;
+        GridEdge(int p0, int p1) :
+            _p0(std::min(p0, p1)), _p1(std::max(p0, p1)) 
+        {
+        };
+        
+        /*void SetV()
+        {
+            isV = true;
+        }
+        bool IsV()
+        {
+            return isV;
+        }
+        void ClearV()
+        {
+            isV = false;
+        }*/
+    };
+
     struct BlockData
     {
         BlockState state;
@@ -70,6 +95,8 @@ public:
     ScalarType CellWidth() const;
     Point3i NodeDims() const;
     size_t NodeCount() const;
+    std::vector<NodeData>& Nodes();
+    const std::vector<NodeData>& Nodes() const;
     bool IsVaildNodeCoord(const Point3i& p) const;
     size_t NodeIndex(const Point3i& p) const;
     NodeData& Node(const Point3i& p);
@@ -162,10 +189,13 @@ public:
             }
         }
     }
+    //----------------------------Grid Edge-----------------------------------
+    void ClearIntersectEdge();
+    const std::set<GridEdge>&  GetIntersectEdge() const;
 
 private:
     int EstimateBlockCount(const ScalarType cell_width, const ScalarType offset_value) const;
-
+    void ForEachAdjacentEdge(const Point3i& start);
 private:
     ScalarType _offsetValue;
     ScalarType _cellWidth;
@@ -175,5 +205,6 @@ private:
     size_t _blockCount;
     Point3i _blockDim;
     std::vector<BlockData> _blocks;
+    std::set<GridEdge> _gridEdges;
     
 };

@@ -123,7 +123,7 @@ void MeshOffseting::RebuildGrid()
     _grid.emplace(_mesh.bbox, _params.voxelSize, _params.offsetDistance);
 }
 
-float MeshOffseting::QuerySignedDistance(const Point3m& p) const
+bool MeshOffseting::QuerySignedDistance(const Point3m& p, float signDist) const
 {
     assert(_bvh);
 
@@ -131,10 +131,10 @@ float MeshOffseting::QuerySignedDistance(const Point3m& p) const
     _bvh->QueryClosestPoint(p, qr);
     if (qr.id == -1)
     {
-        return 0.0f;
+        return false;
     }
-
-    return static_cast<float>(qr.sign) * static_cast<float>(qr.dist);
+    signDist = static_cast<float>(qr.sign) * static_cast<float>(qr.dist);
+    return true;
 }
 
 bool MeshOffseting::IsInvalidByUnsignedDistance(float unsignedDistance, float radius) const
@@ -204,6 +204,72 @@ void MeshOffseting::MarkNodesInWorldBoxInvalid(const Box3m& box)
     }
 }
 
+void MeshOffseting::ApplySignedDistanceFilter()
+{
+    assert(_bvh && _grid);
+
+    _grid->ForEachBlock([&](const Point3i& block)
+        {
+            const OffsetGrid<float>::BlockData& bl = _grid->Block(block);
+            const Point3m sc = _grid->BlockCenter(bl);
+            const float r = _grid->BlockCircumsphereRadius(bl);
+            const float d = std::abs(_params.offsetDistance);
+            const float l = _params.voxelSize;
+
+            QueryResult qr;
+            _bvh->QueryClosestPoint(sc, qr);
+            if (qr.id == -1)
+            {
+                return;
+            }
+
+            if (std::abs(static_cast<float>(qr.dist) - d) > l + r)
+            {
+                _grid->SetBlockState(block, OffsetGrid<float>::BlockState::BlockInvalid);
+                _grid->ForEachNodeInBlock(block, [&](const Point3i& nodeCoord)
+                    {
+                        _grid->SetNodeInvalid(nodeCoord);
+                    });
+                return;
+            }
+
+            _grid->SetBlockState(block, OffsetGrid<float>::BlockState::BlockRetained);
+
+            const float signedDist = static_cast<float>(qr.sign) * static_cast<float>(qr.dist);
+            if (IsInvalidBySignedDistance(signedDist, r))
+            {
+                _grid->SetBlockState(block, OffsetGrid<float>::BlockState::BlockInvalid);
+                _grid->ForEachNodeInBlock(block, [&](const Point3i& nodeCoord)
+                    {
+                        _grid->SetNodeInvalid(nodeCoord);
+                    });
+            }
+            else
+            {
+                _grid->ForEachNodeInBlock(block, [&](const Point3i& nodeCoord)
+                    {
+                        const Point3m nodePos = _grid->NodePosition(nodeCoord);
+                        float nodeSignedDist = 0.0;
+                        if (!QuerySignedDistance(nodePos, nodeSignedDist))
+                        {
+                            _grid->SetNodeInvalid(nodeCoord);
+                        }
+                        else
+                        {
+                            if (IsInvalidBySignedDistance(nodeSignedDist, 0.0f))
+                            {
+                                _grid->SetNodeInvalid(nodeCoord);
+                            }
+                            else
+                            {
+                                _grid->SetSignedDistance(nodeCoord, nodeSignedDist);
+                            }
+                        }
+                    });
+            }
+        });
+}
+
 void MeshOffseting::ApplyOctreeFilter()
 {
     assert(_bvh && _grid);
@@ -260,6 +326,20 @@ void MeshOffseting::ApplyOctreeFilter()
                 recurse(recurse, octree.EnsureChild(octree.Root(), sonIndex));
             }
         });
+
+}
+
+void MeshOffseting::BuildIntersectEdges()
+{
+    assert(_bvh && _grid);
+
+    _grid->ClearIntersectEdge();
+    _grid->BuildIntersectEdges();
+}
+
+void GetIntersectsPoint()
+{
+     
 }
 
 void MeshOffseting::Run()
@@ -270,43 +350,6 @@ void MeshOffseting::Run()
     _grid->ResetBlocks();
     _grid->BuildBlocks();
 
-    _grid->ForEachBlock([&](const Point3i& block)
-        {
-            const OffsetGrid<float>::BlockData& bl = _grid->Block(block);
-            const Point3m sc = _grid->BlockCenter(bl);
-            const float r = _grid->BlockCircumsphereRadius(bl);
-            const float d = std::abs(_params.offsetDistance);
-            const float l = _params.voxelSize;
-
-            QueryResult qr;
-            _bvh->QueryClosestPoint(sc, qr);
-            if (qr.id == -1)
-            {
-                return;
-            }
-
-            if (std::abs(static_cast<float>(qr.dist) - d) > l + r)
-            {
-                _grid->SetBlockState(block, OffsetGrid<float>::BlockState::BlockInvalid);
-                _grid->ForEachNodeInBlock(block, [&](const Point3i& nodeCoord)
-                    {
-                        _grid->SetNodeInvalid(nodeCoord);
-                    });
-                return;
-            }
-
-            _grid->SetBlockState(block, OffsetGrid<float>::BlockState::BlockRetained);
-
-            const float signedDist = static_cast<float>(qr.sign) * static_cast<float>(qr.dist);
-            if (IsInvalidBySignedDistance(signedDist, r))
-            {
-                _grid->SetBlockState(block, OffsetGrid<float>::BlockState::BlockInvalid);
-                _grid->ForEachNodeInBlock(block, [&](const Point3i& nodeCoord)
-                    {
-                        _grid->SetNodeInvalid(nodeCoord);
-                    });
-            }
-        });
-
+    ApplySignedDistanceFilter();
     ApplyOctreeFilter();
 }

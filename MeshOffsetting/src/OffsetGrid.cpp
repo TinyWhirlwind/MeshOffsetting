@@ -55,6 +55,18 @@ size_t OffsetGrid<ScalarType>::NodeCount() const
 }
 
 template <class ScalarType>
+std::vector<typename OffsetGrid<ScalarType>::NodeData>& OffsetGrid<ScalarType>::Nodes()
+{
+    return _nodes;
+}
+
+template <class ScalarType>
+const std::vector<typename OffsetGrid<ScalarType>::NodeData>& OffsetGrid<ScalarType>::Nodes() const
+{
+    return _nodes;
+}
+
+template <class ScalarType>
 bool OffsetGrid<ScalarType>::IsVaildNodeCoord(const Point3i& p) const
 {
     const Point3i dim = NodeDims();
@@ -329,6 +341,35 @@ bool OffsetGrid<ScalarType>::IsBlockRetained(const Point3i& p) const
 }
 
 template <class ScalarType>
+void OffsetGrid<ScalarType>::BuildIntersectEdges()
+{
+    _gridEdges.clear();
+    Point3i nodeDims = NodeDims();
+    for (int i = 0; i <= this->siz[0]; ++i)
+    {
+        for (int j = 0; j <= this->siz[1]; ++j)
+        {
+            for (int k = 0; k <= this->siz[2]; ++k)
+            {
+                ForEachAdjacentEdge(Point3i{ i,j,k });
+            }
+        }
+    }
+}
+
+template <class ScalarType>
+void OffsetGrid<ScalarType>::BuildHermiteSamples()
+{
+
+}
+
+template <class ScalarType>
+void OffsetGrid<ScalarType>::FindIntersectionPointOnGridEdge()
+{
+
+}
+
+template <class ScalarType>
 int OffsetGrid<ScalarType>::EstimateBlockCount(const ScalarType cell_width, const ScalarType offset_value) const
 {
     const ScalarType r = std::abs(offset_value);
@@ -343,6 +384,34 @@ int OffsetGrid<ScalarType>::EstimateBlockCount(const ScalarType cell_width, cons
     if (m > 128) m = 128;
 
     return m;
+}
+
+template <class ScalarType>
+void OffsetGrid<ScalarType>::ForEachAdjacentEdge(const Point3i& start)
+{
+    int sx = start.X();
+    int sy = start.Y();
+    int sz = start.Z();
+    const NodeData& sn = Node(start);
+    Point3i end;
+    for (int i = 0; i < 2; ++i)
+    {
+        int step = (-1) ^ i;
+        for (int j = 0; j < 3; ++j)
+        {
+            end[j] = start[j] + step;
+            if (end[j] < 0 || end[j] > this->siz[j])continue;
+            const NodeData& en = Node(end);
+            if (en.state != NodeState::NodeDistanceReady)continue;
+            if (!sn.hasSignedDistance || !en.hasSignedDistance)continue;
+            if (sn.signedDistance * en.signedDistance >= 0)continue;
+
+            size_t startId = NodeIndex(start);
+            size_t endId = NodeIndex(end);
+            GridEdge edge(startId, endId);
+            _gridEdges.insert(edge);
+        }
+    }
 }
 
 template class OffsetGrid<float>;

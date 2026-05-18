@@ -29,11 +29,15 @@ public:
     void Run();
 
 private:
-    float QuerySignedDistance(const Point3m& p) const;
+    bool QuerySignedDistance(const Point3m& p, float signDist) const;
     bool IsInvalidByUnsignedDistance(float unsignedDistance, float radius) const;
     bool IsInvalidBySignedDistance(float signedDistance, float radius) const;
     void MarkNodesInWorldBoxInvalid(const Box3m& box);
+
+    void ApplySignedDistanceFilter();
     void ApplyOctreeFilter();
+    void BuildIntersectEdges();
+    void CalcIntersectPoint();
 
 private:
     CMeshO _mesh;
