@@ -25,9 +25,9 @@ int main()
     }
     BVH<CFaceO*> bvh(faces);
     QueryResult result;
-	result.dist = std::numeric_limits<float>::max();
+	result._dist = std::numeric_limits<float>::max();
 	bvh.QueryClosestPoint(p0, result);
-	std::cout << "Closest point: " << result.closestPoint[0] << ", " << result.closestPoint[1] << ", " << result.closestPoint[2] << std::endl;
-	std::cout << "Closest dist: " << result.dist << std::endl;
+	std::cout << "Closest point: " << result._closestPoint[0] << ", " << result._closestPoint[1] << ", " << result._closestPoint[2] << std::endl;
+	std::cout << "Closest dist: " << result._dist << std::endl;
     std::cout << "Hello World!" << std::endl;
 }

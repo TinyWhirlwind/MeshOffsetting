@@ -1,3 +1,4 @@
+#pragma once
 #include "mymesh.h"
 #include"AABB.h"
 #include <span>
@@ -72,18 +73,28 @@ public:
 
 };
 
+enum ClosestType
+{
+    Unknown = 0,
+    Face,//0
+    Edge,//01,02,12
+    Vertex//0,1,2
+};
+
 struct QueryResult
 {
-	double dist = std::numeric_limits<double>::max();//unsigned distance
-    int sign = 0;//0/1/-1
-    bool intersected = false;
-    MESHLAB_SCALAR s = 0; //barycentric coordinates
-    MESHLAB_SCALAR t = 0; 
-    Point3m closestPoint = Point3m(0, 0, 0);
-    int id = -1;//triangle index
+	double _dist = std::numeric_limits<double>::max();//unsigned distance
+    int _sign = 0;//0/1/-1
+    bool _intersected = false;
+    MESHLAB_SCALAR _s = 0; //barycentric coordinates
+    MESHLAB_SCALAR _t = 0; 
+    Point3m _closestPoint = Point3m(0, 0, 0);
+    int _id = -1;//triangle index
+    ClosestType _closestType = ClosestType::Unknown;
+    int _closestFeature = -1;
 };
 struct HitResult
-{ 
+{
 
 };
 

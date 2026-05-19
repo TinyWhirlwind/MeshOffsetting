@@ -3,6 +3,7 @@
 #include <base_type.h>
 #include <set>
 #include <vcg/space/index/grid_util.h>
+#include "BVH.h"
 using namespace vcg;
 template <class ScalarType>
 class OffsetGrid : public BasicGrid<ScalarType>
@@ -31,23 +32,39 @@ public:
         ScalarType signedDistance;
         bool hasUnsignedDistance;
         bool hasSignedDistance;
+        QueryResult query;
+        //int triId;
 
         NodeData() :state(NodeState::NodeUnknown),
             unsignedDistance(0), 
             signedDistance(0), 
             hasUnsignedDistance(false), 
-            hasSignedDistance(false) 
-        {}
+            hasSignedDistance(false)//, 
+            //triId(-1)
+        {
+        }
     };
 
     struct GridEdge
     {
         int _p0, _p1;
-        bool isV;
+        ScalarType _alpha; // 交点在 p0-p1 上的插值参数，范围 [0,1]
         GridEdge(int p0, int p1) :
-            _p0(std::min(p0, p1)), _p1(std::max(p0, p1)) 
+            _p0(std::min(p0, p1)),
+            _p1(std::max(p0, p1)), 
+            _alpha(0.0)
         {
         };
+
+        bool operator<(const GridEdge& other) const
+        {
+            if (_p0 != other._p0)
+            {
+                return _p0 < other._p0;
+            }
+
+            return _p1 < other._p1;
+        }
         
         /*void SetV()
         {
@@ -101,13 +118,15 @@ public:
     size_t NodeIndex(const Point3i& p) const;
     NodeData& Node(const Point3i& p);
     const NodeData& Node(const Point3i& p) const;
+    NodeData& Node(const int& id);
+    const NodeData& Node(const int& id) const;
     void ResetNodes();
     // node 整数坐标 -> 世界坐标。这个位置就是 SSVH 最近距离查询里的 q。
     Point3m NodePosition(const Point3i& p) const;
     // 缓存一次 unsigned distance 查询结果
-    void SetUnsignedDistance(const Point3i& p, ScalarType d);
+    void SetUnsignedDistance(const Point3i& p, QueryResult qr);
     // 缓存一次 signed distance 查询结果
-    void SetSignedDistance(const Point3i& p, ScalarType d);
+    void SetSignedDistance(const Point3i& p, QueryResult qr);
     bool HasUnsignedDistance(const Point3i& p) const;
     bool HasSignedDistance(const Point3i& p) const;
     ScalarType UnsignedDistance(const Point3i& p) const;
@@ -190,12 +209,15 @@ public:
         }
     }
     //----------------------------Grid Edge-----------------------------------
-    void ClearIntersectEdge();
-    const std::set<GridEdge>&  GetIntersectEdge() const;
+    const std::set<GridEdge>& GetIntersectEdges();
+    void BuildHermiteSamples();
+    void FindIntersectionPointOnGridEdge();
 
 private:
     int EstimateBlockCount(const ScalarType cell_width, const ScalarType offset_value) const;
     void ForEachAdjacentEdge(const Point3i& start);
+    void BuildIntersectEdges();
+    bool CalcIntersectionPointOnGridEdge(const Point3i& p0, const Point3i& p1, ScalarType& param);
 private:
     ScalarType _offsetValue;
     ScalarType _cellWidth;

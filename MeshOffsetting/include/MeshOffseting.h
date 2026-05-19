@@ -29,15 +29,15 @@ public:
     void Run();
 
 private:
-    bool QuerySignedDistance(const Point3m& p, float signDist) const;
+    bool QuerySignedDistance(const Point3m& p, QueryResult& qr) const;
     bool IsInvalidByUnsignedDistance(float unsignedDistance, float radius) const;
     bool IsInvalidBySignedDistance(float signedDistance, float radius) const;
     void MarkNodesInWorldBoxInvalid(const Box3m& box);
 
     void ApplySignedDistanceFilter();
     void ApplyOctreeFilter();
-    void BuildIntersectEdges();
-    void CalcIntersectPoint();
+    void FindIntersectionPointOnGridEdge();
+    CFaceO* FindSameTriangle(const OffsetGrid<float>::NodeData& n0, const OffsetGrid<float>::NodeData& n1);
 
 private:
     CMeshO _mesh;

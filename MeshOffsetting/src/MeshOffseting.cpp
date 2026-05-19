@@ -58,7 +58,7 @@ MeshOffseting::MeshOffseting(const CMeshO& mesh, const Params& params)
     vcg::tri::UpdateBounding<CMeshO>::Box(_mesh);
     vcg::tri::UpdateNormal<CMeshO>::PerFaceNormalized(_mesh);
     vcg::tri::UpdateNormal<CMeshO>::PerVertexAngleWeighted(_mesh);
-
+    vcg::tri::UpdateTopology<CMeshO>::FaceFace(_mesh);
     RebuildBVH();
     RebuildGrid();
 }
@@ -123,17 +123,15 @@ void MeshOffseting::RebuildGrid()
     _grid.emplace(_mesh.bbox, _params.voxelSize, _params.offsetDistance);
 }
 
-bool MeshOffseting::QuerySignedDistance(const Point3m& p, float signDist) const
+bool MeshOffseting::QuerySignedDistance(const Point3m& p, QueryResult& qr) const
 {
     assert(_bvh);
-
-    QueryResult qr;
     _bvh->QueryClosestPoint(p, qr);
-    if (qr.id == -1)
+    if (qr._id == -1)
     {
         return false;
     }
-    signDist = static_cast<float>(qr.sign) * static_cast<float>(qr.dist);
+    //signDist = static_cast<float>(qr.sign) * static_cast<float>(qr.dist);
     return true;
 }
 
@@ -218,12 +216,12 @@ void MeshOffseting::ApplySignedDistanceFilter()
 
             QueryResult qr;
             _bvh->QueryClosestPoint(sc, qr);
-            if (qr.id == -1)
+            if (qr._id == -1)
             {
                 return;
             }
 
-            if (std::abs(static_cast<float>(qr.dist) - d) > l + r)
+            if (std::abs(static_cast<float>(qr._dist) - d) > l + r)
             {
                 _grid->SetBlockState(block, OffsetGrid<float>::BlockState::BlockInvalid);
                 _grid->ForEachNodeInBlock(block, [&](const Point3i& nodeCoord)
@@ -234,8 +232,7 @@ void MeshOffseting::ApplySignedDistanceFilter()
             }
 
             _grid->SetBlockState(block, OffsetGrid<float>::BlockState::BlockRetained);
-
-            const float signedDist = static_cast<float>(qr.sign) * static_cast<float>(qr.dist);
+            float signedDist = static_cast<float>(qr._sign) * static_cast<float>(qr._dist);
             if (IsInvalidBySignedDistance(signedDist, r))
             {
                 _grid->SetBlockState(block, OffsetGrid<float>::BlockState::BlockInvalid);
@@ -249,20 +246,21 @@ void MeshOffseting::ApplySignedDistanceFilter()
                 _grid->ForEachNodeInBlock(block, [&](const Point3i& nodeCoord)
                     {
                         const Point3m nodePos = _grid->NodePosition(nodeCoord);
-                        float nodeSignedDist = 0.0;
-                        if (!QuerySignedDistance(nodePos, nodeSignedDist))
+                        QueryResult qr;
+                        if (!QuerySignedDistance(nodePos, qr))
                         {
                             _grid->SetNodeInvalid(nodeCoord);
                         }
                         else
                         {
+                            float nodeSignedDist = static_cast<float>(qr._sign) * static_cast<float>(qr._dist);
                             if (IsInvalidBySignedDistance(nodeSignedDist, 0.0f))
                             {
                                 _grid->SetNodeInvalid(nodeCoord);
                             }
                             else
                             {
-                                _grid->SetSignedDistance(nodeCoord, nodeSignedDist);
+                                _grid->SetSignedDistance(nodeCoord, qr);
                             }
                         }
                     });
@@ -301,7 +299,10 @@ void MeshOffseting::ApplyOctreeFilter()
                     Box3m nodeBox;
                     octree.BoundingBoxInWorldCoordinates(node, nodeBox);
 
-                    const float signedDistance = QuerySignedDistance(nodeBox.Center());
+                    QueryResult qr;
+                    if (!QuerySignedDistance(nodeBox.Center(), qr))
+                        return;
+                    float signedDistance = static_cast<float>(qr._sign) * static_cast<float>(qr._dist);
                     const float radius = static_cast<float>(nodeBox.Dim().Norm() * 0.5);
                     if (IsInvalidBySignedDistance(signedDistance, radius))
                     {
@@ -329,17 +330,40 @@ void MeshOffseting::ApplyOctreeFilter()
 
 }
 
-void MeshOffseting::BuildIntersectEdges()
+void MeshOffseting::FindIntersectionPointOnGridEdge()
 {
     assert(_bvh && _grid);
+    const std::set<OffsetGrid<float>::GridEdge>& interEdges = _grid->GetIntersectEdges();
+    for (auto& ed : interEdges)
+    {
+        assert(ed._p0 == ed._p1);
+        const OffsetGrid<float>::NodeData&  n0 = _grid->Node(ed._p0);
+        const OffsetGrid<float>::NodeData&  n1 = _grid->Node(ed._p1);
+        if (n0.query._id == n1.query._id)
+        {
+            CFaceO& f0 = _mesh.face[n0.query._id];
+            CFaceO& f1 = _mesh.face[n1.query._id];
+        }
+        else
+        {
 
-    _grid->ClearIntersectEdge();
-    _grid->BuildIntersectEdges();
+        }
+    }
 }
 
-void GetIntersectsPoint()
+CFaceO* MeshOffseting::FindSameTriangle(const OffsetGrid<float>::NodeData& n0, const OffsetGrid<float>::NodeData& n1)
 {
-     
+    QueryResult q0 = n0.query;
+    QueryResult q1 = n1.query;
+    assert(q0._id != -1 && q1._id != -1);
+    if (q0._id == q1._id)
+        return &_mesh.face(q0._id);
+    CFaceO& f0 = _mesh.face[q0._id];
+    CFaceO& f1 = _mesh.face[q1._id];
+    for (int i = 0; i < 3; ++i)
+    {
+        if (f0.cFFp(i) != &f1)continue;
+    }
 }
 
 void MeshOffseting::Run()

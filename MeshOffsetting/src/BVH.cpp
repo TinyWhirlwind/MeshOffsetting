@@ -103,12 +103,12 @@ QueryResult BVH<Primitive>::CalcDistancePointToPrimitive(const Point3m& p, const
 
         auto setResult = [&](Scalarm s, Scalarm t)
             {
-                result.s = s;
-                result.t = t;
-                result.closestPoint = a + (b - a) * s + (c - a) * t;
-                const Point3m diff = p - result.closestPoint;
-                result.dist = std::sqrt(diff * diff);
-                result.intersected = result.dist <= epsilon;
+                result._s = s;
+                result._t = t;
+                result._closestPoint = a + (b - a) * s + (c - a) * t;
+                const Point3m diff = p - result._closestPoint;
+                result._dist = std::sqrt(diff * diff);
+                result._intersected = result._dist <= epsilon;
             };
 
         const Point3m ab = b - a;
@@ -120,6 +120,8 @@ QueryResult BVH<Primitive>::CalcDistancePointToPrimitive(const Point3m& p, const
         if (d1 <= 0 && d2 <= 0)
         {
             setResult(0, 0);
+            result._closestType = ClosestType::Vertex;
+            result._closestFeature = 0; // A
             return result;
         }
 
@@ -129,6 +131,8 @@ QueryResult BVH<Primitive>::CalcDistancePointToPrimitive(const Point3m& p, const
         if (d3 >= 0 && d4 <= d3)
         {
             setResult(1, 0);
+            result._closestType = ClosestType::Vertex;
+            result._closestFeature = 1; // B
             return result;
         }
 
@@ -138,6 +142,8 @@ QueryResult BVH<Primitive>::CalcDistancePointToPrimitive(const Point3m& p, const
             const Scalarm denom = d1 - d3;
             const Scalarm v = denom > epsilon ? d1 / denom : 0;
             setResult(v, 0);
+            result._closestType = ClosestType::Edge;
+            result._closestFeature = 0; // AB
             return result;
         }
 
@@ -147,6 +153,8 @@ QueryResult BVH<Primitive>::CalcDistancePointToPrimitive(const Point3m& p, const
         if (d6 >= 0 && d5 <= d6)
         {
             setResult(0, 1);
+            result._closestType = ClosestType::Vertex;
+            result._closestFeature = 2; // C
             return result;
         }
 
@@ -156,6 +164,8 @@ QueryResult BVH<Primitive>::CalcDistancePointToPrimitive(const Point3m& p, const
             const Scalarm denom = d2 - d6;
             const Scalarm w = denom > epsilon ? d2 / denom : 0;
             setResult(0, w);
+            result._closestType = ClosestType::Edge;
+            result._closestFeature = 1; // AC
             return result;
         }
 
@@ -165,6 +175,8 @@ QueryResult BVH<Primitive>::CalcDistancePointToPrimitive(const Point3m& p, const
             const Scalarm denom = (d4 - d3) + (d5 - d6);
             const Scalarm w = denom > epsilon ? (d4 - d3) / denom : 0;
             setResult(1 - w, w);
+            result._closestType = ClosestType::Edge;
+            result._closestFeature = 2; // BC
             return result;
         }
 
@@ -174,6 +186,8 @@ QueryResult BVH<Primitive>::CalcDistancePointToPrimitive(const Point3m& p, const
             const Scalarm v = vb / denom;
             const Scalarm w = vc / denom;
             setResult(v, w);
+            result._closestType = ClosestType::Face;
+            result._closestFeature = 0;
         }
         else
         {
@@ -185,16 +199,16 @@ QueryResult BVH<Primitive>::CalcDistancePointToPrimitive(const Point3m& p, const
                 u = std::clamp(u, Scalarm(0), Scalarm(1));
 
                 QueryResult candidate{};
-                candidate.id = -1;
-                candidate.sign = 0;
-                candidate.intersected = false;
-                candidate.s = s0 + (s1 - s0) * u;
-                candidate.t = t0 + (t1 - t0) * u;
-                candidate.closestPoint = p0 + edge * u;
-                const Point3m diff = p - candidate.closestPoint;
-                candidate.dist = std::sqrt(diff * diff);
-                candidate.intersected = candidate.dist <= epsilon;
-                if (candidate.dist < result.dist)
+                candidate._id = -1;
+                candidate._sign = 0;
+                candidate._intersected = false;
+                candidate._s = s0 + (s1 - s0) * u;
+                candidate._t = t0 + (t1 - t0) * u;
+                candidate._closestPoint = p0 + edge * u;
+                const Point3m diff = p - candidate._closestPoint;
+                candidate._dist = std::sqrt(diff * diff);
+                candidate._intersected = candidate._dist <= epsilon;
+                if (candidate._dist < result._dist)
                 {
                     result = candidate;
                 }
@@ -233,11 +247,11 @@ void BVH<Primitive>::QueryClosestPoint(const Point3m& p, QueryResult& result) co
             for (int i = 0; i < node->nPrimitives; ++i)
             { 
                 QueryResult curResult = CalcDistancePointToPrimitive(p,_primitives[node->leafOffset + i]);
-                if (curResult.dist < minDistance)
+                if (curResult._dist < minDistance)
                 {
-                    minDistance = curResult.dist;
+                    minDistance = curResult._dist;
                     result = curResult;
-                    result.id = node->leafOffset + i;
+                    result._id = node->leafOffset + i;
                 }
             }
         }
@@ -272,7 +286,7 @@ void BVH<Primitive>::QueryClosestPoint(const Point3m& p, QueryResult& result) co
         }
     }
     
-    result.sign = (p - result.closestPoint) * _primitives[result.id]->N() > 0 ? 1 : -1;//封闭模型大致判断，非封闭还要额外判断
+    result._sign = (p - result._closestPoint) * _primitives[result._id]->N() > 0 ? 1 : -1;//封闭模型大致判断，非封闭还要额外判断
     return;
 }
 

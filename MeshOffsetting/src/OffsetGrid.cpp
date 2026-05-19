@@ -97,6 +97,18 @@ const typename OffsetGrid<ScalarType>::NodeData& OffsetGrid<ScalarType>::Node(co
 }
 
 template <class ScalarType>
+typename OffsetGrid<ScalarType>::NodeData& OffsetGrid<ScalarType>::Node(const int& id)
+{
+    return _nodes[id];
+}
+
+template <class ScalarType>
+const typename OffsetGrid<ScalarType>::NodeData& OffsetGrid<ScalarType>::Node(const int& id) const
+{
+    return _nodes[id];
+}
+
+template <class ScalarType>
 void OffsetGrid<ScalarType>::ResetNodes()
 {
     std::fill(_nodes.begin(), _nodes.end(), NodeData());
@@ -113,21 +125,25 @@ Point3m OffsetGrid<ScalarType>::NodePosition(const Point3i& p) const
 }
 
 template <class ScalarType>
-void OffsetGrid<ScalarType>::SetUnsignedDistance(const Point3i& p, ScalarType d)
+void OffsetGrid<ScalarType>::SetUnsignedDistance(const Point3i& p, QueryResult qr)
 {
     NodeData& node = Node(p);
-    node.unsignedDistance = d;
+    node.unsignedDistance = qr._dist;
     //node.state = NodeState::NodeDistanceReady;
     node.hasUnsignedDistance = true;
+    //node.triId = tid;
+    node.query = qr;
 }
 
 template <class ScalarType>
-void OffsetGrid<ScalarType>::SetSignedDistance(const Point3i& p, ScalarType d)
+void OffsetGrid<ScalarType>::SetSignedDistance(const Point3i& p, QueryResult qr)
 {
     NodeData& node = Node(p);
-    node.signedDistance = d;
+    node.signedDistance = static_cast<float>(qr._sign) * static_cast<float>(qr._dist);
     node.hasSignedDistance = true;
     node.state = NodeState::NodeDistanceReady;
+    //node.triId = qr.id;
+    node.query = qr;
 }
 
 template <class ScalarType>
@@ -341,20 +357,10 @@ bool OffsetGrid<ScalarType>::IsBlockRetained(const Point3i& p) const
 }
 
 template <class ScalarType>
-void OffsetGrid<ScalarType>::BuildIntersectEdges()
+const std::set<typename OffsetGrid<ScalarType>::GridEdge>& OffsetGrid<ScalarType>::GetIntersectEdges()
 {
-    _gridEdges.clear();
-    Point3i nodeDims = NodeDims();
-    for (int i = 0; i <= this->siz[0]; ++i)
-    {
-        for (int j = 0; j <= this->siz[1]; ++j)
-        {
-            for (int k = 0; k <= this->siz[2]; ++k)
-            {
-                ForEachAdjacentEdge(Point3i{ i,j,k });
-            }
-        }
-    }
+    BuildIntersectEdges();
+    return _gridEdges;
 }
 
 template <class ScalarType>
@@ -387,6 +393,23 @@ int OffsetGrid<ScalarType>::EstimateBlockCount(const ScalarType cell_width, cons
 }
 
 template <class ScalarType>
+void OffsetGrid<ScalarType>::BuildIntersectEdges()
+{
+    _gridEdges.clear();
+    Point3i nodeDims = NodeDims();
+    for (int i = 0; i <= this->siz[0]; ++i)
+    {
+        for (int j = 0; j <= this->siz[1]; ++j)
+        {
+            for (int k = 0; k <= this->siz[2]; ++k)
+            {
+                ForEachAdjacentEdge(Point3i{ i,j,k });
+            }
+        }
+    }
+}
+
+template <class ScalarType>
 void OffsetGrid<ScalarType>::ForEachAdjacentEdge(const Point3i& start)
 {
     int sx = start.X();
@@ -394,9 +417,9 @@ void OffsetGrid<ScalarType>::ForEachAdjacentEdge(const Point3i& start)
     int sz = start.Z();
     const NodeData& sn = Node(start);
     Point3i end;
-    for (int i = 0; i < 2; ++i)
+    for (int i = 1; i <= 2; ++i)
     {
-        int step = (-1) ^ i;
+        int step = std::pow(-1, i);
         for (int j = 0; j < 3; ++j)
         {
             end[j] = start[j] + step;
