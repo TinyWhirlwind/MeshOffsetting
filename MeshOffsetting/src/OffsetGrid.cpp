@@ -357,10 +357,10 @@ bool OffsetGrid<ScalarType>::IsBlockRetained(const Point3i& p) const
 }
 
 template <class ScalarType>
-std::set<typename OffsetGrid<ScalarType>::GridEdge>& OffsetGrid<ScalarType>::GetIntersectEdges()
+std::vector<typename OffsetGrid<ScalarType>::GridEdge>& OffsetGrid<ScalarType>::GetIntersectEdges()
 {
     BuildIntersectEdges();
-    return &_gridEdges;
+    return _gridEdges;
 }
 
 template <class ScalarType>
@@ -407,6 +407,10 @@ void OffsetGrid<ScalarType>::BuildIntersectEdges()
             }
         }
     }
+    std::sort(_gridEdges.begin(), _gridEdges.end());
+    _gridEdges.erase(
+        std::unique(_gridEdges.begin(), _gridEdges.end()),
+        _gridEdges.end());
 }
 
 template <class ScalarType>
@@ -432,7 +436,7 @@ void OffsetGrid<ScalarType>::ForEachAdjacentEdge(const Point3i& start)
             size_t startId = NodeIndex(start);
             size_t endId = NodeIndex(end);
             GridEdge edge(startId, endId);
-            _gridEdges.insert(edge);
+            _gridEdges.push_back(edge);
         }
     }
 }

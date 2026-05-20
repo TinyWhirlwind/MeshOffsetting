@@ -65,6 +65,11 @@ public:
 
             return _p1 < other._p1;
         }
+
+        bool operator==(const GridEdge& other) const
+        {
+            return _p0 == other._p0 && _p1 == other._p1;
+        }
         
         /*void SetV()
         {
@@ -209,7 +214,7 @@ public:
         }
     }
     //----------------------------Grid Edge-----------------------------------
-    std::set<GridEdge>& GetIntersectEdges();
+    std::vector<GridEdge>& GetIntersectEdges();
     void BuildHermiteSamples();
     void FindIntersectionPointOnGridEdge();
 
@@ -227,6 +232,6 @@ private:
     size_t _blockCount;
     Point3i _blockDim;
     std::vector<BlockData> _blocks;
-    std::set<GridEdge> _gridEdges;
+    std::vector<GridEdge> _gridEdges;
     
 };

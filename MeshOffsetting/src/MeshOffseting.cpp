@@ -330,10 +330,10 @@ void MeshOffseting::ApplyOctreeFilter()
 
 }
 
-bool MeshOffseting::FindIntersectionPointOnGridEdge()
+void MeshOffseting::FindIntersectionPointOnGridEdge()
 {
     assert(_bvh && _grid);
-    std::set<OffsetGrid<float>::GridEdge>& interEdges = _grid->GetIntersectEdges();
+    std::vector<OffsetGrid<float>::GridEdge>& interEdges = _grid->GetIntersectEdges();
     for (auto& ed : interEdges)
     {
         assert(ed._p0 == ed._p1);
@@ -346,12 +346,12 @@ bool MeshOffseting::FindIntersectionPointOnGridEdge()
         if (!sameFace)
         {
             //bisection search
-            return SolveByBisection(ed);
+            SolveByBisection(ed);
         }
         else
         {
             //analytical solution
-            return SolveByAnalyticalSolution(ed);
+            SolveByAnalyticalSolution(ed);
         }
     }
 }
@@ -456,14 +456,12 @@ TriangleRegion MeshOffseting::ToTriangleRegion(const QueryResult& qr)
     return TriangleRegion::Unknown;
 }
 
-bool MeshOffseting::SolveByBisection(OffsetGrid<float>::GridEdge& edge)
+void MeshOffseting::SolveByBisection(OffsetGrid<float>::GridEdge& edge)
 {
-    return false;
 }
 
-bool MeshOffseting::SolveByAnalyticalSolution(OffsetGrid<float>::GridEdge& edge)
+void MeshOffseting::SolveByAnalyticalSolution(OffsetGrid<float>::GridEdge& edge)
 {
-    return false;
 }
 
 void MeshOffseting::Run()

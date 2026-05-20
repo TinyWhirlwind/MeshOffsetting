@@ -50,11 +50,11 @@ private:
 
     void ApplySignedDistanceFilter();
     void ApplyOctreeFilter();
-    bool FindIntersectionPointOnGridEdge();
+    void FindIntersectionPointOnGridEdge();
     CFaceO* FindSameTriangle(const OffsetGrid<float>::NodeData& n0, const OffsetGrid<float>::NodeData& n1);
     TriangleRegion ToTriangleRegion(const QueryResult& qr);
-    bool SolveByBisection(OffsetGrid<float>::GridEdge& edge);
-    bool SolveByAnalyticalSolution(OffsetGrid<float>::GridEdge& edge);
+    void SolveByBisection(OffsetGrid<float>::GridEdge& edge);
+    void SolveByAnalyticalSolution(OffsetGrid<float>::GridEdge& edge);
 private:
     CMeshO _mesh;
     Params _params;
