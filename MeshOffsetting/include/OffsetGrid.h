@@ -209,7 +209,7 @@ public:
         }
     }
     //----------------------------Grid Edge-----------------------------------
-    const std::set<GridEdge>& GetIntersectEdges();
+    std::set<GridEdge>& GetIntersectEdges();
     void BuildHermiteSamples();
     void FindIntersectionPointOnGridEdge();
 

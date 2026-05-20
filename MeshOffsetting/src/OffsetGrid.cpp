@@ -357,10 +357,10 @@ bool OffsetGrid<ScalarType>::IsBlockRetained(const Point3i& p) const
 }
 
 template <class ScalarType>
-const std::set<typename OffsetGrid<ScalarType>::GridEdge>& OffsetGrid<ScalarType>::GetIntersectEdges()
+std::set<typename OffsetGrid<ScalarType>::GridEdge>& OffsetGrid<ScalarType>::GetIntersectEdges()
 {
     BuildIntersectEdges();
-    return _gridEdges;
+    return &_gridEdges;
 }
 
 template <class ScalarType>

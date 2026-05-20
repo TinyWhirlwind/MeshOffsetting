@@ -77,7 +77,7 @@ enum ClosestType
 {
     Unknown = 0,
     Face,//0
-    Edge,//01,02,12
+    Edge,//01,12,02
     Vertex//0,1,2
 };
 

@@ -5,6 +5,20 @@
 #include "OffsetGrid.h"
 #include "BVH.h"
 
+enum class TriangleRegion
+{
+    Face = 0,
+
+    Edge01,
+    Edge02,
+    Edge12,
+
+    Vertex0,
+    Vertex1,
+    Vertex2,
+
+    Unknown
+};
 class MeshOffseting
 {
 public:
@@ -36,9 +50,11 @@ private:
 
     void ApplySignedDistanceFilter();
     void ApplyOctreeFilter();
-    void FindIntersectionPointOnGridEdge();
+    bool FindIntersectionPointOnGridEdge();
     CFaceO* FindSameTriangle(const OffsetGrid<float>::NodeData& n0, const OffsetGrid<float>::NodeData& n1);
-
+    TriangleRegion ToTriangleRegion(const QueryResult& qr);
+    bool SolveByBisection(OffsetGrid<float>::GridEdge& edge);
+    bool SolveByAnalyticalSolution(OffsetGrid<float>::GridEdge& edge);
 private:
     CMeshO _mesh;
     Params _params;

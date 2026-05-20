@@ -165,7 +165,7 @@ QueryResult BVH<Primitive>::CalcDistancePointToPrimitive(const Point3m& p, const
             const Scalarm w = denom > epsilon ? d2 / denom : 0;
             setResult(0, w);
             result._closestType = ClosestType::Edge;
-            result._closestFeature = 1; // AC
+            result._closestFeature = 2; // AC
             return result;
         }
 
@@ -176,7 +176,7 @@ QueryResult BVH<Primitive>::CalcDistancePointToPrimitive(const Point3m& p, const
             const Scalarm w = denom > epsilon ? (d4 - d3) / denom : 0;
             setResult(1 - w, w);
             result._closestType = ClosestType::Edge;
-            result._closestFeature = 2; // BC
+            result._closestFeature = 1; // BC
             return result;
         }
 

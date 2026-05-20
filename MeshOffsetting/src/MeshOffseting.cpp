@@ -330,23 +330,28 @@ void MeshOffseting::ApplyOctreeFilter()
 
 }
 
-void MeshOffseting::FindIntersectionPointOnGridEdge()
+bool MeshOffseting::FindIntersectionPointOnGridEdge()
 {
     assert(_bvh && _grid);
-    const std::set<OffsetGrid<float>::GridEdge>& interEdges = _grid->GetIntersectEdges();
+    std::set<OffsetGrid<float>::GridEdge>& interEdges = _grid->GetIntersectEdges();
     for (auto& ed : interEdges)
     {
         assert(ed._p0 == ed._p1);
         const OffsetGrid<float>::NodeData&  n0 = _grid->Node(ed._p0);
         const OffsetGrid<float>::NodeData&  n1 = _grid->Node(ed._p1);
-        if (n0.query._id == n1.query._id)
+
+        CFaceO* sameFace = FindSameTriangle(n0, n1);
+        TriangleRegion r0 = ToTriangleRegion(n0.query);
+        TriangleRegion r1 = ToTriangleRegion(n1.query);
+        if (!sameFace)
         {
-            CFaceO& f0 = _mesh.face[n0.query._id];
-            CFaceO& f1 = _mesh.face[n1.query._id];
+            //bisection search
+            return SolveByBisection(ed);
         }
         else
         {
-
+            //analytical solution
+            return SolveByAnalyticalSolution(ed);
         }
     }
 }
@@ -357,13 +362,108 @@ CFaceO* MeshOffseting::FindSameTriangle(const OffsetGrid<float>::NodeData& n0, c
     QueryResult q1 = n1.query;
     assert(q0._id != -1 && q1._id != -1);
     if (q0._id == q1._id)
-        return &_mesh.face(q0._id);
+        return &_mesh.face[q0._id];
     CFaceO& f0 = _mesh.face[q0._id];
     CFaceO& f1 = _mesh.face[q1._id];
     for (int i = 0; i < 3; ++i)
     {
         if (f0.cFFp(i) != &f1)continue;
+        if (q0._closestType == ClosestType::Vertex && (q0._closestFeature == i || q0._closestFeature == (i + 1) % 3))
+        {
+            return &f1;
+        }
+        if (q0._closestType == ClosestType::Edge && q0._closestFeature == i)
+        {
+            return &f1;
+        }
     }
+    for (int i = 0; i < 3; ++i)
+    {
+        if (f1.cFFp(i) != &f0)continue;
+        if (q1._closestType == ClosestType::Vertex && (q1._closestFeature == i || q1._closestFeature == (i + 1) % 3))
+        {
+            return &f0;
+        }
+        if (q1._closestType == ClosestType::Edge && q1._closestFeature == i)
+        {
+            return &f0;
+        }
+    }
+    int share = 0;
+    int sharePid = -1;
+    for (int i = 0; i < 3; ++i)
+    {
+        for (int j = 0; j < 3; ++j)
+        {
+            if (f0.V(i)->Index() == f1.V(j)->Index())
+            {
+                share++;
+                sharePid = f0.V(i)->Index();
+            }
+        }
+    }
+    if (share == 1)
+    {
+        if (q0._closestType == ClosestType::Vertex && f0.V(q0._closestFeature)->Index() == sharePid)
+        {
+            return &f1;
+        }
+        if (q1._closestType == ClosestType::Vertex && f1.V(q1._closestFeature)->Index() == sharePid)
+        {
+            return &f0;
+        }
+        if (q0._closestType == ClosestType::Edge && q1._closestType == ClosestType::Edge)
+        {
+            auto es0 = f0.V(q0._closestFeature)->Index();
+            auto ee0 = f0.V((q0._closestFeature + 1) % 3)->Index();
+            auto es1 = f1.V(q1._closestFeature)->Index();
+            auto ee1 = f1.V((q1._closestFeature + 1) % 3)->Index();
+
+            if (ee0 == es1)
+            {
+                return f0.cFFp(q0._closestFeature);
+            }
+
+            if (ee1 == es0)
+            {
+                return f1.cFFp(q1._closestFeature);
+            }
+        }
+    }
+    return nullptr;
+} 
+
+TriangleRegion MeshOffseting::ToTriangleRegion(const QueryResult& qr)
+{
+    if (qr._closestType == ClosestType::Face)
+    {
+        return TriangleRegion::Face;
+    }
+
+    if (qr._closestType == ClosestType::Edge)
+    {
+        if (qr._closestFeature == 0) return TriangleRegion::Edge01;
+        if (qr._closestFeature == 1) return TriangleRegion::Edge02;
+        if (qr._closestFeature == 2) return TriangleRegion::Edge12;
+    }
+    if (qr._closestType == ClosestType::Vertex)
+    {
+        if (qr._closestFeature == 0) return TriangleRegion::Vertex0;
+        if (qr._closestFeature == 1) return TriangleRegion::Vertex1;
+        if (qr._closestFeature == 2) return TriangleRegion::Vertex2;
+    }
+
+    return TriangleRegion::Unknown;
+}
+
+bool MeshOffseting::SolveByBisection(OffsetGrid<float>::GridEdge& edge)
+{
+    return false;
+}
+
+bool MeshOffseting::SolveByAnalyticalSolution(OffsetGrid<float>::GridEdge& edge)
+{
+    return false;
 }
 
 void MeshOffseting::Run()
