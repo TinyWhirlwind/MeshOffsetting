@@ -336,59 +336,94 @@ void MeshOffseting::FindIntersectionPointOnGridEdge()
     std::vector<OffsetGrid<float>::GridEdge>& interEdges = _grid->GetIntersectEdges();
     for (auto& ed : interEdges)
     {
-        assert(ed._p0 == ed._p1);
+        assert(ed._p0 != ed._p1);
         const OffsetGrid<float>::NodeData&  n0 = _grid->Node(ed._p0);
         const OffsetGrid<float>::NodeData&  n1 = _grid->Node(ed._p1);
 
-        CFaceO* sameFace = FindSameTriangle(n0, n1);
-        TriangleRegion r0 = ToTriangleRegion(n0.query);
-        TriangleRegion r1 = ToTriangleRegion(n1.query);
-        if (!sameFace)
+        CanonicalFeature cf0;
+        CanonicalFeature cf1;
+        if (FindSameTriangle(n0, n1, cf0, cf1))
         {
-            //bisection search
-            SolveByBisection(ed);
+            TriangleRegion r0 = ToTriangleRegion(n0.query);
+            TriangleRegion r1 = ToTriangleRegion(n1.query);
+            SolveByAnalyticalSolution(ed, cf0, cf1);
         }
         else
         {
-            //analytical solution
-            SolveByAnalyticalSolution(ed);
+            SolveByBisection(ed);
         }
     }
 }
 
-CFaceO* MeshOffseting::FindSameTriangle(const OffsetGrid<float>::NodeData& n0, const OffsetGrid<float>::NodeData& n1)
+//找到相同三角形，并将相交边的两个最近点映射到同一个三角形上
+bool MeshOffseting::FindSameTriangle(const OffsetGrid<float>::NodeData& n0, const OffsetGrid<float>::NodeData& n1, CanonicalFeature& cf0, CanonicalFeature& cf1)
 {
     QueryResult q0 = n0.query;
     QueryResult q1 = n1.query;
     assert(q0._id != -1 && q1._id != -1);
+
+    cf0._faceId = q0._id;
+    cf0._feature = q0._closestFeature;
+    cf0._type = q0._closestType;
+    cf0._faceId = q1._id;
+    cf0._feature = q1._closestFeature;
+    cf0._type = q1._closestType;
     if (q0._id == q1._id)
-        return &_mesh.face[q0._id];
+    {
+        return true;
+    }
     CFaceO& f0 = _mesh.face[q0._id];
     CFaceO& f1 = _mesh.face[q1._id];
+    int id0 = f0.V(q0._closestFeature)->Index();
+    int id0Next = f0.V((q0._closestFeature + 1) % 3)->Index();
+    int id1 = f1.V(q1._closestFeature)->Index();
+    int id1Next = f1.V((q1._closestFeature + 1) % 3)->Index();
+
     for (int i = 0; i < 3; ++i)
     {
         if (f0.cFFp(i) != &f1)continue;
-        if (q0._closestType == ClosestType::Vertex && (q0._closestFeature == i || q0._closestFeature == (i + 1) % 3))
+        if (q0._closestType == ClosestType::Vertex)
         {
-            return &f1;
+            int order0 = -1;
+            if (judgeVertexInTriangleOrder(id0, &f1, order0))
+            {
+                cf0._feature = order0;
+                cf0._faceId = f1.Index();
+                return true;
+            }
         }
-        if (q0._closestType == ClosestType::Edge && q0._closestFeature == i)
+        else if (q1._closestType == ClosestType::Vertex)
         {
-            return &f1;
+            int order1 = -1;
+            if (judgeVertexInTriangleOrder(id1, &f0, order1))
+            {
+                cf1._feature = order1;
+                cf1._faceId = f0.Index();
+                return true;
+            }
+        }
+        if (q0._closestType == ClosestType::Edge)
+        {
+            int order0 = -1;
+            if (judgeEdgeInTriangleOrder(id0, id0Next, &f1, order0))
+            {
+                cf0._feature = order0;
+                cf0._faceId = f1.Index();
+                return true;
+            }
+        }
+        else if(q1._closestType == ClosestType::Edge)
+        {
+            int order1 = -1;
+            if (judgeEdgeInTriangleOrder(id1, id1Next, &f0, order1))
+            {
+                cf1._feature = order1;
+                cf1._faceId = f0.Index();
+                return true;
+            }
         }
     }
-    for (int i = 0; i < 3; ++i)
-    {
-        if (f1.cFFp(i) != &f0)continue;
-        if (q1._closestType == ClosestType::Vertex && (q1._closestFeature == i || q1._closestFeature == (i + 1) % 3))
-        {
-            return &f0;
-        }
-        if (q1._closestType == ClosestType::Edge && q1._closestFeature == i)
-        {
-            return &f0;
-        }
-    }
+
     int share = 0;
     int sharePid = -1;
     for (int i = 0; i < 3; ++i)
@@ -402,35 +437,44 @@ CFaceO* MeshOffseting::FindSameTriangle(const OffsetGrid<float>::NodeData& n0, c
             }
         }
     }
+
     if (share == 1)
     {
-        if (q0._closestType == ClosestType::Vertex && f0.V(q0._closestFeature)->Index() == sharePid)
+        if (q0._closestType == ClosestType::Vertex && id0 == sharePid)
         {
-            return &f1;
+            int order0 = -1;
+            if (judgeVertexInTriangleOrder(id0, &f1, order0))
+            {
+                cf0._feature = order0;
+                cf0._faceId = f1.Index();
+                return true;
+            }
         }
-        if (q1._closestType == ClosestType::Vertex && f1.V(q1._closestFeature)->Index() == sharePid)
+        if (q1._closestType == ClosestType::Vertex && id1 == sharePid)
         {
-            return &f0;
+            int order1 = -1;
+            if (judgeVertexInTriangleOrder(id1, &f0, order1))
+            {
+                cf1._feature = order1;
+                cf1._faceId = f0.Index();
+                return true;
+            }
         }
         if (q0._closestType == ClosestType::Edge && q1._closestType == ClosestType::Edge)
         {
-            auto es0 = f0.V(q0._closestFeature)->Index();
-            auto ee0 = f0.V((q0._closestFeature + 1) % 3)->Index();
-            auto es1 = f1.V(q1._closestFeature)->Index();
-            auto ee1 = f1.V((q1._closestFeature + 1) % 3)->Index();
-
-            if (ee0 == es1)
+            auto f2 = f0.cFFp(q0._closestFeature);
+            int order0 = -1;
+            int order1 = -1;
+            if (judgeEdgeInTriangleOrder(id0, id0Next, f2, order0) && judgeEdgeInTriangleOrder(id1, id1Next, f2, order1))
             {
-                return f0.cFFp(q0._closestFeature);
-            }
-
-            if (ee1 == es0)
-            {
-                return f1.cFFp(q1._closestFeature);
+                cf0._faceId = f2->Index();
+                cf0._feature = order0;
+                cf1._faceId = f2->Index();
+                cf1._feature = order1;
+                return true;
             }
         }
     }
-    return nullptr;
 } 
 
 TriangleRegion MeshOffseting::ToTriangleRegion(const QueryResult& qr)
@@ -443,8 +487,8 @@ TriangleRegion MeshOffseting::ToTriangleRegion(const QueryResult& qr)
     if (qr._closestType == ClosestType::Edge)
     {
         if (qr._closestFeature == 0) return TriangleRegion::Edge01;
-        if (qr._closestFeature == 1) return TriangleRegion::Edge02;
-        if (qr._closestFeature == 2) return TriangleRegion::Edge12;
+        if (qr._closestFeature == 1) return TriangleRegion::Edge12;
+        if (qr._closestFeature == 2) return TriangleRegion::Edge20;
     }
     if (qr._closestType == ClosestType::Vertex)
     {
@@ -458,12 +502,170 @@ TriangleRegion MeshOffseting::ToTriangleRegion(const QueryResult& qr)
 
 void MeshOffseting::SolveByBisection(OffsetGrid<float>::GridEdge& edge)
 {
+    assert(_grid && _bvh);
+
+    const auto& n0 = _grid->Node(edge._p0);
+    const auto& n1 = _grid->Node(edge._p1);
+
+    float f0 = n0.signedDistance - _params.offsetDistance;
+    float f1 = n1.signedDistance - _params.offsetDistance;
+
+    if (std::abs(f0) <= 1e-6f)
+    {
+        edge._alpha = 0.0f;
+        return;
+    }
+    if (std::abs(f1) <= 1e-6f)
+    {
+        edge._alpha = 1.0f;
+        return;
+    }
+
+    Point3m p0 = _grid->NodePosition(edge._p0);
+    Point3m p1 = _grid->NodePosition(edge._p1);
+
+    float lo = 0.0f;
+    float hi = 1.0f;
+    float flo = f0;
+    float fhi = f1;
+
+    if (flo * fhi > 0.0f)
+    {
+        edge._alpha = std::clamp(flo / (flo - fhi), 0.0f, 1.0f);
+        return;
+    }
+
+    const float tolF = 1e-5f;
+    const float tolA = 1e-5f;
+
+    for (int iter = 0; iter < 40; ++iter)
+    {
+        float mid = 0.5f * (lo + hi);
+        Point3m pm = p0 + (p1 - p0) * mid;
+
+        QueryResult qr;
+        if (!QuerySignedDistance(pm, qr))
+        {
+            edge._alpha = mid;
+            return;
+        }
+
+        float fmid = static_cast<float>(qr._sign) * static_cast<float>(qr._dist) - _params.offsetDistance;
+
+        if (std::abs(fmid) <= tolF || (hi - lo) <= tolA)
+        {
+            edge._alpha = mid;
+            return;
+        }
+
+        if (flo * fmid <= 0.0f)
+        {
+            hi = mid;
+            fhi = fmid;
+        }
+        else
+        {
+            lo = mid;
+            flo = fmid;
+        }
+    }
+
+    edge._alpha = 0.5f * (lo + hi);
 }
 
-void MeshOffseting::SolveByAnalyticalSolution(OffsetGrid<float>::GridEdge& edge)
+void MeshOffseting::SolveByAnalyticalSolution(OffsetGrid<float>::GridEdge& edge, CanonicalFeature cf0, CanonicalFeature cf1)
 {
+    assert(_grid && _bvh);
+    auto& n0 = _grid->Node(edge._p0);
+    auto& n1 = _grid->Node(edge._p1);
+    auto& qr0 = n0.query;
+    auto& qr1 = n1.query;
+    float  offsetValue = _grid->OffsetValue();
+    Point3m p0 = _grid->NodePosition(edge._p0);
+    Point3m p1 = _grid->NodePosition(edge._p1);
+    //1.Face:same triangle 2.Vertex:same triangle,same Vertex 3.Edge:same triangle,same Edge
+    if (cf0._feature == cf1._feature)
+    {
+        if (cf0._type == ClosestType::Face && cf1._type == ClosestType::Face)
+        {
+            edge._alpha = (n0.signedDistance - offsetValue) / (n0.signedDistance - n1.signedDistance);
+        }
+        if (cf0._type == ClosestType::Vertex && cf1._type == ClosestType::Vertex)
+        {
+            //|p(alpha) - q|^2 = r^2
+            float r = std::abs(offsetValue);
+            Point3m d = p1 - p0;
+            Point3m w0 = p0 - qr0._closestPoint;
+
+            float A = d * d;
+            float B = 2.0 * (w0 * d);
+            float C = w0 * w0 - r * r;
+            float delta = B * B - 4 * A * C;
+            edge._alpha = (-B + -sqrt(delta)) / (2 * A);
+
+        }
+        if(cf0._type == ClosestType::Edge && cf1._type == ClosestType::Edge)
+        {
+            float r = std::abs(offsetValue);
+            //dist^2(p(alpha), line(ab)) = r^2
+            Point3m a = _mesh.face[cf0._faceId].V(cf0._feature)->P();
+            Point3m b = _mesh.face[cf0._faceId].V((cf0._feature + 1) % 3)->P();
+            
+            Point3m d = p1 - p0;
+            Point3m u = b - a;
+            Point3m w0 = p0 - a;
+            float uu = u * u;
+
+            float A = d * d - (d * u) * (d * u) / uu;
+            float B = 2.0 * (w0 * d - (w0 * u) * (d * u) / uu);
+            float C = w0 * w0 - (w0 * u) * (w0 * u) / uu - r * r;
+            if (A <= epsilon)
+            {
+                edge._alpha = -C / B;
+            }
+            else
+            {
+                float delta = B * B - 4 * A * C;
+                edge._alpha = (-B + -sqrt(delta)) / (2 * A);
+            }
+        }
+    }
 }
 
+bool MeshOffseting::judgeEdgeInTriangleOrder(int v0,int v1,CFaceO* f,int& order)
+{
+    for (int i = 0; i < 3; ++i)
+    {
+        int id = f->V(i)->Index();
+        if (id != v0)continue;
+        if (v1 == f->V((i + 1) % 3)->Index())
+        {
+            order = i;
+            return true;
+        }
+        if (v1 == f->V((i - 1+3)%3)->Index())
+        {
+            order = (i - 1 + 3) % 3;
+            return true;
+        }
+        return false;
+    }
+    return false;
+}
+
+bool MeshOffseting::judgeVertexInTriangleOrder(int v, CFaceO* f, int& order)
+{
+    for (int i = 0; i < 3; ++i)
+    {
+        int id = f->V(i)->Index();
+        if (v == id)
+        {
+            order = i;
+            return true;
+        }
+    }
+    return false;
+}
 void MeshOffseting::Run()
 {
     assert(_bvh && _grid);

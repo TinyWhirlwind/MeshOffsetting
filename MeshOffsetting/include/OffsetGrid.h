@@ -32,7 +32,7 @@ public:
         ScalarType signedDistance;
         bool hasUnsignedDistance;
         bool hasSignedDistance;
-        QueryResult query;
+        QueryResult query;//查询信息
         //int triId;
 
         NodeData() :state(NodeState::NodeUnknown),
@@ -47,7 +47,7 @@ public:
 
     struct GridEdge
     {
-        int _p0, _p1;
+        int _p0, _p1;//nodeIndex
         ScalarType _alpha; // 交点在 p0-p1 上的插值参数，范围 [0,1]
         GridEdge(int p0, int p1) :
             _p0(std::min(p0, p1)),
@@ -128,6 +128,7 @@ public:
     void ResetNodes();
     // node 整数坐标 -> 世界坐标。这个位置就是 SSVH 最近距离查询里的 q。
     Point3m NodePosition(const Point3i& p) const;
+    Point3m NodePosition(const int& id) const;
     // 缓存一次 unsigned distance 查询结果
     void SetUnsignedDistance(const Point3i& p, QueryResult qr);
     // 缓存一次 signed distance 查询结果

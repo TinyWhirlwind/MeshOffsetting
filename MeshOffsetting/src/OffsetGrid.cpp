@@ -125,6 +125,19 @@ Point3m OffsetGrid<ScalarType>::NodePosition(const Point3i& p) const
 }
 
 template <class ScalarType>
+Point3m OffsetGrid<ScalarType>::NodePosition(const int& id) const
+{
+    Point3i dim = NodeDims();
+
+    int xy = dim[0] * dim[1];
+    int z = id / xy;
+    int rem = id % xy;
+    int y = rem / dim[0];
+    int x = rem % dim[0];
+    return NodePosition(Point3i{ x,y,z });
+}
+
+template <class ScalarType>
 void OffsetGrid<ScalarType>::SetUnsignedDistance(const Point3i& p, QueryResult qr)
 {
     NodeData& node = Node(p);
@@ -431,7 +444,7 @@ void OffsetGrid<ScalarType>::ForEachAdjacentEdge(const Point3i& start)
             const NodeData& en = Node(end);
             if (en.state != NodeState::NodeDistanceReady)continue;
             if (!sn.hasSignedDistance || !en.hasSignedDistance)continue;
-            if (sn.signedDistance * en.signedDistance >= 0)continue;
+            if ((sn.signedDistance - _offsetValue) * (en.signedDistance-_offsetValue) >= 0)continue;
 
             size_t startId = NodeIndex(start);
             size_t endId = NodeIndex(end);

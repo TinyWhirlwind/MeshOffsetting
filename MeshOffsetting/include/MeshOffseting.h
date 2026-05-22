@@ -10,8 +10,8 @@ enum class TriangleRegion
     Face = 0,
 
     Edge01,
-    Edge02,
     Edge12,
+    Edge20,
 
     Vertex0,
     Vertex1,
@@ -19,6 +19,14 @@ enum class TriangleRegion
 
     Unknown
 };
+
+struct CanonicalFeature
+{
+    int _faceId = -1;
+    ClosestType _type = ClosestType::Unknown;
+    int _feature = -1; // 这个 feature 是相对 sameFace 的局部编号
+};
+
 class MeshOffseting
 {
 public:
@@ -51,10 +59,14 @@ private:
     void ApplySignedDistanceFilter();
     void ApplyOctreeFilter();
     void FindIntersectionPointOnGridEdge();
-    CFaceO* FindSameTriangle(const OffsetGrid<float>::NodeData& n0, const OffsetGrid<float>::NodeData& n1);
+    //找到相同三角形，并将相交边的两个最近点映射到同一个三角形上
+    bool FindSameTriangle(const OffsetGrid<float>::NodeData& n0, const OffsetGrid<float>::NodeData& n1, CanonicalFeature& cf0, CanonicalFeature& cf1);
     TriangleRegion ToTriangleRegion(const QueryResult& qr);
     void SolveByBisection(OffsetGrid<float>::GridEdge& edge);
-    void SolveByAnalyticalSolution(OffsetGrid<float>::GridEdge& edge);
+    void SolveByAnalyticalSolution(OffsetGrid<float>::GridEdge& edge, CanonicalFeature cf0, CanonicalFeature cf1);
+
+    bool judgeEdgeInTriangleOrder(int v0, int v1, CFaceO* f,int& order);
+    bool judgeVertexInTriangleOrder(int v, CFaceO* f,int& order);
 private:
     CMeshO _mesh;
     Params _params;
