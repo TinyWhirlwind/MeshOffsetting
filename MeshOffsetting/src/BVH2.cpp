@@ -1,4 +1,5 @@
 #include "BVH.h"
+#include "Tolerance.h"
 #include <memory_resource>
 #include <thread>
 #include <algorithm>
@@ -108,7 +109,7 @@ QueryResult BVH<Primitive>::CalcDistancePointToPrimitive(const Point3m& p, const
                 result._closestPoint = a + (b - a) * s + (c - a) * t;
                 const Point3m diff = p - result._closestPoint;
                 result._dist = std::sqrt(diff * diff);
-                result._intersected = result._dist <= epsilon;
+                result._intersected = result._dist <= Tolerance::Distance;
             };
 
         const Point3m ab = b - a;
@@ -140,7 +141,7 @@ QueryResult BVH<Primitive>::CalcDistancePointToPrimitive(const Point3m& p, const
         if (vc <= 0 && d1 >= 0 && d3 <= 0)
         {
             const Scalarm denom = d1 - d3;
-            const Scalarm v = denom > epsilon ? d1 / denom : 0;
+            const Scalarm v = denom > Tolerance::Distance ? d1 / denom : 0;
             setResult(v, 0);
             result._closestType = ClosestType::Edge;
             result._closestFeature = 0; // AB
@@ -162,7 +163,7 @@ QueryResult BVH<Primitive>::CalcDistancePointToPrimitive(const Point3m& p, const
         if (vb <= 0 && d2 >= 0 && d6 <= 0)
         {
             const Scalarm denom = d2 - d6;
-            const Scalarm w = denom > epsilon ? d2 / denom : 0;
+            const Scalarm w = denom > Tolerance::Distance ? d2 / denom : 0;
             setResult(0, w);
             result._closestType = ClosestType::Edge;
             result._closestFeature = 2; // AC
@@ -173,7 +174,7 @@ QueryResult BVH<Primitive>::CalcDistancePointToPrimitive(const Point3m& p, const
         if (va <= 0 && (d4 - d3) >= 0 && (d5 - d6) >= 0)
         {
             const Scalarm denom = (d4 - d3) + (d5 - d6);
-            const Scalarm w = denom > epsilon ? (d4 - d3) / denom : 0;
+            const Scalarm w = denom > Tolerance::Distance ? (d4 - d3) / denom : 0;
             setResult(1 - w, w);
             result._closestType = ClosestType::Edge;
             result._closestFeature = 1; // BC
@@ -181,7 +182,7 @@ QueryResult BVH<Primitive>::CalcDistancePointToPrimitive(const Point3m& p, const
         }
 
         const Scalarm denom = va + vb + vc;
-        if (std::abs(denom) > epsilon)
+        if (std::abs(denom) > Tolerance::Distance)
         {
             const Scalarm v = vb / denom;
             const Scalarm w = vc / denom;
@@ -195,7 +196,7 @@ QueryResult BVH<Primitive>::CalcDistancePointToPrimitive(const Point3m& p, const
             {
                 const Point3m edge = p1 - p0;
                 const Scalarm len2 = edge * edge;
-                Scalarm u = len2 > epsilon ? ((p - p0) * edge) / len2 : 0;
+                Scalarm u = len2 > Tolerance::Distance ? ((p - p0) * edge) / len2 : 0;
                 u = std::clamp(u, Scalarm(0), Scalarm(1));
 
                 QueryResult candidate{};
@@ -207,7 +208,7 @@ QueryResult BVH<Primitive>::CalcDistancePointToPrimitive(const Point3m& p, const
                 candidate._closestPoint = p0 + edge * u;
                 const Point3m diff = p - candidate._closestPoint;
                 candidate._dist = std::sqrt(diff * diff);
-                candidate._intersected = candidate._dist <= epsilon;
+                candidate._intersected = candidate._dist <= Tolerance::Distance;
                 if (candidate._dist < result._dist)
                 {
                     result = candidate;
@@ -303,7 +304,7 @@ BVHNode* BVH<Primitive>::buildBVH(std::span<BVHPrimitive> primitives, std::atomi
 
     //float bestCost = primitives.size() * 1.0f;
     float nodeSA = boxSum.SurfaceArea();
-    if (nodeSA < epsilon || primitives.size() == 1)
+    if (nodeSA < Tolerance::Distance || primitives.size() == 1)
     {
         int leafOffset = orderedPrimsOffset->fetch_add(primitives.size());
         for (size_t i = 0; i < primitives.size(); ++i)

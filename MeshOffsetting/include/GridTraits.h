@@ -1,6 +1,6 @@
-#pragma once
-
-#include "mymesh.h"
+#ifndef MESHOFFSETTING_GETTER_H
+#define MESHOFFSETTING_GETTER_H 
+#include "CMeshO.h"
 
 struct FaceBBoxGetter
 {
@@ -44,4 +44,5 @@ struct EdgeBBoxGetter
         return box;
     }
 };
+#endif
 

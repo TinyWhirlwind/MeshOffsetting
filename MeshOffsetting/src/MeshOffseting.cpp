@@ -1,5 +1,5 @@
 #include "MeshOffseting.h"
-
+#include "tolerance.h"
 #include <algorithm>
 #include <cassert>
 #include <cmath>
@@ -619,7 +619,7 @@ void MeshOffseting::SolveByAnalyticalSolution(OffsetGrid<float>::GridEdge& edge,
             float A = d * d - (d * u) * (d * u) / uu;
             float B = 2.0 * (w0 * d - (w0 * u) * (d * u) / uu);
             float C = w0 * w0 - (w0 * u) * (w0 * u) / uu - r * r;
-            if (A <= epsilon)
+            if (A <= Tolerance::Distance)
             {
                 edge._alpha = -C / B;
             }

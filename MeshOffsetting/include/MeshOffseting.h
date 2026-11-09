@@ -1,7 +1,7 @@
 #ifndef _MESH_OFFSETING_H_
 #define _MESH_OFFSETING_H_
 #include <optional>
-#include "mymesh.h"
+#include "CMeshO.h"
 #include "OffsetGrid.h"
 #include "BVH.h"
 

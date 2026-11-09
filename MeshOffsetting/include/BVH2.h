@@ -1,5 +1,6 @@
-#pragma once
-#include "mymesh.h"
+#ifndef MESHOFFSETTING_BVH_H
+#define MESHOFFSETTING_BVH_H 
+#include "CMeshO.h"
 #include"AABB.h"
 #include <span>
 #include <vcg/space/ray3.h>
@@ -137,3 +138,4 @@ private:
     //int _totalNodes = 0;
     SplitMethod _splitType;
 };
+#endif

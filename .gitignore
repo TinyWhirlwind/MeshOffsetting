@@ -33,3 +33,19 @@ cmake-build-*/
 # Other
 *.user
 *.suo
+
+# Codex / local tools
+/.agents/
+/.codex/
+
+# CMake user-specific files
+CMakeUserPresets.json
+compile_commands.json
+
+# MSVC intermediate files
+*.idb
+*.ipdb
+*.iobj
+*.tlog
+*.lastbuildstate
+*.exp

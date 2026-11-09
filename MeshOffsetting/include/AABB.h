@@ -1,4 +1,6 @@
-#include "mymesh.h"
+#ifndef MESHOFFSETTING_AABB_H
+#define MESHOFFSETTING_AABB_H
+#include "CMeshO.h"
 #include <algorithm>
 class AABBBox : public Box3m
 {
@@ -74,3 +76,4 @@ private:
     Point3m _center;
     unsigned int _dim;
 };
+#endif

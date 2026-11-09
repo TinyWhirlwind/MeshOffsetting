@@ -1,5 +1,6 @@
-#pragma once
-#include "mymesh.h"
+#ifndef MESHOFFSETTING_OFFSETGRID_H
+#define MESHOFFSETTING_OFFSETGRID_H
+#include "CMeshO.h"
 #include <base_type.h>
 #include <set>
 #include <vcg/space/index/grid_util.h>
@@ -236,3 +237,5 @@ private:
     std::vector<GridEdge> _gridEdges;
     
 };
+
+#endif
