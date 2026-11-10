@@ -1,12 +1,12 @@
 #include "UniformGrid.h"
 namespace meshoffsetting
 {
-	UniformGrid::UniformGrid(const Box3m& box, const Scalarm& offset, const int count)
-		:_bbox(box), _cell_count(count)
+	UniformGrid::UniformGrid(const Box3m& box, const Scalarm& offset, int block_size, const int count)
+		:_bbox(box), _cell_count(count), _block_size(block_size)
 	{
 		Scalarm max_side = std::max({ _bbox.DimX(), _bbox.DimY() ,_bbox.DimZ() });
-		Scalarm cell_width = (max_side + offset * 2)/ count;
-		ComputeDimAndVoxel(cell_width);
+		_cell_width = (max_side + offset * 2)/ (count - 2);
+		ComputeDimAndVoxel();
 	}
 
 	UniformGrid::~UniformGrid()
@@ -17,6 +17,11 @@ namespace meshoffsetting
 	{
 		size = _size;
 		voxel = _voxel;
+	}
+
+	Scalarm UniformGrid::GetCellWidth() const
+	{
+		return _cell_width;
 	}
 
 	GridNode& UniformGrid::Node(const Point3i& node)
@@ -47,18 +52,20 @@ namespace meshoffsetting
 		return pos;
 	}
 
-	void UniformGrid::ComputeDimAndVoxel(const Scalarm& cell_width)
+	void UniformGrid::ComputeDimAndVoxel()
 	{
-		_dim = _bbox.max - _bbox.min;
-		_size.X() = std::ceil(_dim.X() / cell_width);
-		_size.Y() = std::ceil(_dim.Y() / cell_width);
-		_size.Z() = std::ceil(_dim.Z() / cell_width);
-		_voxel.X() = cell_width;
-		_voxel.Y() = cell_width;
-		_voxel.Z() = cell_width;
-		_dim = Point3m(_size.X() * _voxel.X(),
-			_size.Y() * _voxel.Y(),
-			_size.Z() * _voxel.Z());
+		auto paddedCount = [this](Scalarm dim, Scalarm cell_width) -> int
+		{
+			int count = static_cast<int>(std::ceil(dim / cell_width));
+			count = ((count + _block_size - 1) / _block_size) * _block_size;
+			return count;
+		};
+		int count_x = paddedCount(_bbox.DimX(), _cell_width);
+		int count_y = paddedCount(_bbox.DimY(), _cell_width);
+		int count_z = paddedCount(_bbox.DimZ(), _cell_width);
+		_size = Point3i(count_x + 1, count_y + 1, count_z + 1);
+		_voxel = Point3m(_cell_width, _cell_width, _cell_width);
+		_dim = Point3m{ _voxel.X() * count_x, _voxel.Y() * count_y, _voxel.Z() * count_z };
 		_nodes.resize(_size.X() * _size.Y() * _size.Z());
 	}
 }

@@ -40,6 +40,7 @@ namespace meshoffsetting
 
 	ClosestPointResult SSVH::QueryClosestPoint(const Point3m& q)
 	{
+		//‘› ±Œ¥ µœ÷
 		return ClosestPointResult();
 	}
 

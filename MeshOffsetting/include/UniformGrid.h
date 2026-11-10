@@ -21,7 +21,7 @@ namespace meshoffsetting
 	struct GridNode
 	{
 		GridNodeState state = GridNodeState::Unknown;
-		Scalarm signedDistance = 0;
+		Scalarm signed_distance = 0;
 		/*Scalarm unSignedDistance = 0;
 		Point3m position = Point3m(0, 0, 0);
 		int id = -1;*/
@@ -30,10 +30,11 @@ namespace meshoffsetting
 	class UniformGrid
 	{
 	public:
-		UniformGrid(const Box3m& box, const Scalarm& offset, const int count = 512);
+		UniformGrid(const Box3m& box, const Scalarm& offset, int block_size = 8, const int count = 512);
 		~UniformGrid();
 
 		void GetSizeAndVoxel(Point3m& size, Point3m& voxel) const;
+		Scalarm GetCellWidth() const;
 		GridNode& Node(const Point3i& node);
 		std::size_t NodeIndex(const Point3i& node);
 		Point3i NodeCoord(std::size_t index);
@@ -44,9 +45,11 @@ namespace meshoffsetting
 		Point3i _size;
 		Point3m _voxel;
 		int _cell_count = 0;
+		int _block_size = 0;	
+		Scalarm _cell_width = 0;
 		std::vector<GridNode> _nodes;
 
-		void ComputeDimAndVoxel(const Scalarm& cell_width);
+		void ComputeDimAndVoxel();
 	};
 }
 #endif

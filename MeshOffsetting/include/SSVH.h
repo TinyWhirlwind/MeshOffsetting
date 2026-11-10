@@ -17,7 +17,7 @@ namespace meshoffsetting
 		bool found = false;
 		int faceId = -1;
 		Point3m closestPoint;
-		Scalarm distance = std::numeric_limits<Scalarm>::max();
+		Scalarm unsigned_distance = std::numeric_limits<Scalarm>::max();
 		Scalarm u, v = 0.0;
 	};
 	
@@ -49,11 +49,11 @@ namespace meshoffsetting
 		explicit SSVH(const CMeshO& mesh);
 		SSVH() = default;
 
-		void Build(const CMeshO& mesh);
 		ClosestPointResult QueryClosestPoint(const Point3m& q);
 		bool Empty() const;
 
 	private:
+		void Build(const CMeshO& mesh);
 		void BuildNode(int nodeIndex, std::size_t begin, std::size_t end);
 		RSS FitRSS(std::size_t begin, std::size_t end, Point3m mean);
 		Point3m FaceCentroid(int fid);
