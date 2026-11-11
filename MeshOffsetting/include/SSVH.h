@@ -12,6 +12,14 @@
 #include <limits>
 namespace meshoffsetting
 {
+	enum ClosestType
+	{
+		Unknown = 0,
+		Face,//0
+		Edge,//01,12,02
+		Vertex//0,1,2
+	};
+
 	struct ClosestPointResult
 	{
 		bool found = false;
@@ -20,11 +28,15 @@ namespace meshoffsetting
 		Scalarm unsigned_distance = std::numeric_limits<Scalarm>::max();
 		Scalarm u = 0.0;
 		Scalarm	v = 0.0;
+
+		ClosestType closestType = ClosestType::Unknown;
+		int closestFeature = -1;
+		bool intersected = false;
 	};
 	
 	struct RSS
 	{
-		Scalarm sweepRadius = 0;
+		Scalarm sweep_radius = 0;
 		Point3m origin;
 
 		Point3m axisU;
@@ -59,6 +71,10 @@ namespace meshoffsetting
 		void BuildNode(int nodeIndex, std::size_t begin, std::size_t end);
 		RSS FitRSS(std::size_t begin, std::size_t end, Point3m& mean);
 		Point3m FaceCentroid(int fid);
+		void QueryNode(int node_index, const Point3m& query_p, ClosestPointResult& result);
+		void UpdateClosestPointWithTriangle(int face_index, const Point3m& query_p, ClosestPointResult& result);
+		ClosestPointResult CalcDistancePointToPrimitive(const Point3m& p, int face_index) const;
+		Scalarm DistanceToRSS(const Point3m& query_p, const RSS& bound) const;
 	private:
 		int _root = -1;
 		CMeshO _mesh;

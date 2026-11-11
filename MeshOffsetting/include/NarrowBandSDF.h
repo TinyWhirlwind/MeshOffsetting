@@ -23,8 +23,6 @@ namespace meshoffsetting
         VertexC
     };
 
-    inline constexpr Scalarm kScalarTolerance = std::numeric_limits<Scalarm>::epsilon() * Scalarm(64);
-    inline constexpr Scalarm kScalarToleranceSquared = kScalarTolerance * kScalarTolerance;
     class NarrowBandSDF
     {
         struct GridBlock
