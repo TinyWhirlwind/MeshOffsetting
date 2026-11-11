@@ -1,27 +1,22 @@
 #include "SSVH.h"
-#include <set>
-#include <vector>
-#include <utility>
-#include <Eigen/Core>
+#include <algorithm>
 #include <Eigen/Dense>
 namespace meshoffsetting
 {
 	SSVH::SSVH(const CMeshO& mesh)
 		:_mesh(mesh)
 	{
-		_nodes.clear();
-		_root = -1;
-		Build(mesh);
+		Build();
 	}
 
-	void SSVH::Build(const CMeshO& mesh)
+	void SSVH::Build()
 	{
-		_mesh = mesh;
+		_nodes.clear();
 		_faceIndices.clear();
-		_faceIndices.reserve(mesh.face.size());
-		for (int i = 0; i < mesh.fn; ++i)
+		_faceIndices.reserve(_mesh.face.size());
+		for (int i = 0; i < _mesh.fn; ++i)
 		{
-			if (mesh.face[i].IsD())
+			if (_mesh.face[i].IsD())
 				continue;
 			_faceIndices.push_back(i);
 
@@ -44,6 +39,11 @@ namespace meshoffsetting
 		return ClosestPointResult();
 	}
 
+	bool  SSVH::Empty() const
+	{
+		return _root < 0 || _nodes.empty();
+	}
+
 	void SSVH::BuildNode(int nodeIndex, std::size_t begin, std::size_t end)
 	{
 		Point3m mean;
@@ -60,9 +60,7 @@ namespace meshoffsetting
 		Point3m splitAxis = bound.axisU;
 		auto first = _faceIndices.begin() + begin;
 		auto last = _faceIndices.begin() + end;
-		auto middle = std::partition(
-			_faceIndices.begin(),
-			_faceIndices.end(),
+		auto middle = std::partition(first, last,
 			[&](int id)
 			{
 				Point3m center = FaceCentroid(id);
@@ -84,7 +82,7 @@ namespace meshoffsetting
 		BuildNode(firstChild + 1, mid, end);
 	}
 
-	RSS SSVH::FitRSS(std::size_t begin, std::size_t end, Point3m mean_p)
+	RSS SSVH::FitRSS(std::size_t begin, std::size_t end, Point3m& mean_p)
 	{
 		Eigen::Vector3<Scalarm> mean = Eigen::Vector3<Scalarm>::Zero();
 		Eigen::Matrix3<Scalarm> covariance = Eigen::Matrix3<Scalarm>::Zero();
@@ -97,8 +95,6 @@ namespace meshoffsetting
 			{
 				const Point3m& p = fi.P(j);
 				Eigen::Vector3<Scalarm> pi(p.X(), p.Y(), p.Z());
-
-				Eigen::Vector3<Scalarm> delta = pi - mean;
 				mean += pi;
 				covariance += (pi * pi.transpose());
 				++vn;
@@ -114,7 +110,7 @@ namespace meshoffsetting
 		axis[2] = axis[0].cross(axis[1]).normalized();
 
 		RSS bound;
-		Scalarm height = std::numeric_limits<Scalarm>::lowest();
+		Scalarm height = std::numeric_limits<Scalarm>::max();
 		Scalarm lowest = std::numeric_limits<Scalarm>::lowest();
 		Scalarm max_coord[3] = { lowest, lowest, lowest };
 		Scalarm min_coord[3] = { height, height, height };

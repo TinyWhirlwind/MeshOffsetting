@@ -32,6 +32,7 @@ namespace meshoffsetting
 	public:
 		UniformGrid(const Box3m& box, const Scalarm& offset, int block_size = 8, const int count = 512);
 		~UniformGrid();
+		UniformGrid() = default;
 
 		void GetSizeAndVoxel(Point3m& size, Point3m& voxel) const;
 		Scalarm GetCellWidth() const;

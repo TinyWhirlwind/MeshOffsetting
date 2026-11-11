@@ -4,14 +4,79 @@ namespace meshoffsetting
 {
     NarrowBandSDF::NarrowBandSDF(const CMeshO& mesh, const Scalarm offsetDistance,int nodeCount, int blockWidth):
         _mesh(mesh),
-        _offsetDistance(offsetDistance),
+        _offset_distance(offsetDistance),
         _block_width(blockWidth),
         _ssvh(mesh),
-		_grid(mesh.bbox, offsetDistance, nodeCount)
+		_grid(mesh.bbox, offsetDistance, blockWidth, nodeCount)
     {
         _cell_width = _grid.GetCellWidth();
+        _mesh.vert.EnableVFAdjacency();
+        _mesh.face.EnableVFAdjacency();
+        _mesh.face.EnableFFAdjacency();
+        vcg::tri::UpdateNormal<CMeshO>::PerFaceNormalized(_mesh);
+        vcg::tri::UpdateTopology<CMeshO>::VertexFace(_mesh);
+        vcg::tri::UpdateTopology<CMeshO>::FaceFace(_mesh);
+        Build();
     }
 
+    ClosestFeature NarrowBandSDF::ClassifyBarycentric(Scalarm u, Scalarm v)
+    {
+        // U:dir(B-A) V:dir(C-A) 
+        // query_p = A + u(B-A) + v(C-A) = (1 - u - v)A + uB + vC = wA + uB + vC
+        Scalarm w = 1 - u - v;
+        bool zu = std::abs(u) < kScalarTolerance;
+        bool zv = std::abs(v) < kScalarTolerance;
+        bool zw = std::abs(w) < kScalarTolerance;
+        if (zu && zv) return ClosestFeature::VertexA;
+        if (zu && zw) return ClosestFeature::VertexC;
+        if (zv && zw) return ClosestFeature::VertexB;
+        
+        if (zu) return ClosestFeature::EdgeCA;
+        if (zv) return ClosestFeature::EdgeAB;
+        if (zw) return ClosestFeature::EdgeBC;
+
+        return ClosestFeature::Face;
+    }
+
+    void NarrowBandSDF::AngleWeightedPseudoNormal(CVertexO* v, Point3m& normal)
+    {
+        vcg::face::VFIterator<CMeshO::FaceType> vfi(v);
+        for (; !vfi.End(); ++vfi)
+        {
+            auto* nf = vfi.F();
+            int vid = vfi.I();
+            auto v0 = nf->P(vid);
+            auto v1 = nf->P((vid + 1) % 3);
+            auto v2 = nf->P((vid + 2) % 3);
+            auto e1 = v1 - v0;
+            auto e2 = v2 - v0;
+            if (e1.SquaredNorm() <= kScalarToleranceSquared ||
+                e2.SquaredNorm() <= kScalarToleranceSquared)
+            {
+                continue; // 退化面
+            }
+            e1.Normalize();
+            e2.Normalize();
+
+            float cosTheta = std::clamp(e1.dot(e2), -1.0f, 1.0f);
+            float theta = std::acos(cosTheta);
+            normal += nf->N() * theta;
+        }
+    }
+
+    void NarrowBandSDF::AngleWeightedPseudoNormal(CFaceO* f, int edge_id, Point3m& normal)
+    {
+        auto nf = f->FFp(edge_id);
+        if (nf != f)
+        {
+            normal = f->N() + nf->N();
+        }
+        else
+        {
+            //边界边
+            normal = f->N();
+        }
+    }
 
     int NarrowBandSDF::CheckSign(ClosestPointResult query_result, Point3m center, bool& is_valid)
     {
@@ -21,8 +86,39 @@ namespace meshoffsetting
             is_valid = false;
             return 0;
         }
-        auto& f = _mesh.face[query_result.faceId];
-        int sign = (center - query_result.closestPoint) * f.N() > 0 ? 1 : -1;
+        //Angle-weighted pseudonormal
+        //根据查询点到网格的最近点，根据最近点的位置（点、边、面），采用三种法向，判断查询点在模型内部还是外部
+        int sign = 0;
+        auto* f = &(_mesh.face[query_result.faceId]);
+        Point3m nf(0., 0., 0.);
+        ClosestFeature type = ClassifyBarycentric(query_result.u, query_result.v);
+        switch (type)
+        {
+        case ClosestFeature::VertexA:
+            AngleWeightedPseudoNormal(f->V(0), nf);
+            break;
+        case ClosestFeature::VertexB:
+            AngleWeightedPseudoNormal(f->V(1), nf);
+            break;
+        case ClosestFeature::VertexC:
+            AngleWeightedPseudoNormal(f->V(2), nf);
+            break;
+        case ClosestFeature::EdgeAB:
+            AngleWeightedPseudoNormal(f, 0, nf);
+            break;
+        case ClosestFeature::EdgeBC:
+            AngleWeightedPseudoNormal(f, 1, nf);
+            break;
+        case ClosestFeature::EdgeCA:
+            AngleWeightedPseudoNormal(f, 2, nf);
+            break;
+        case ClosestFeature::Face:
+            nf = f->N();
+            break;
+        default:
+            break;
+        }
+        sign = (center - query_result.closest_point) * nf > 0 ? 1 : -1;
         return sign;
     }
 
@@ -52,16 +148,20 @@ namespace meshoffsetting
                     ClosestPointResult closest_point = _ssvh.QueryClosestPoint(box_center);
                     bool is_valid = true;
                     int sign = CheckSign(closest_point, box_center, is_valid);
-                    if (!is_valid)continue;
-
-                    Scalarm signed_distance = sign * closest_point.unsigned_distance;
-                    if (!IsBoxValidBySignedDistance(signed_distance, box_circumsphere_radius))
+                    if (!is_valid)
                     {
-                        //设置无效
-
+                        SetNodeState(child_min, child_max, GridNodeState::NodeInvalid);
                         continue;
                     }
-                    SubdivideBlock(child_min, child_max, --depth);
+
+                    Scalarm signed_distance = sign * closest_point.unsigned_distance;
+                    if (std::abs(signed_distance - _offset_distance) > _cell_width + box_circumsphere_radius)
+                    {
+                        //设置 Invalid grid nodes
+                        SetNodeState(child_min, child_max, GridNodeState::NodeInvalid);
+                        continue;
+                    }
+                    SubdivideBlock(child_min, child_max, depth - 1);
                 }
             }
         }
@@ -69,8 +169,8 @@ namespace meshoffsetting
 
     bool NarrowBandSDF::IsBoxValidBySignedDistance(Scalarm signed_distance, Scalarm circumsphere_radius) const
     {
-        Scalarm d = std::abs(_offsetDistance);
-        if (_offsetDistance > 0)
+        Scalarm d = std::abs(_offset_distance);
+        if (_offset_distance > 0)
         {
             Scalarm upper = std::min(
                 -d + _cell_width + circumsphere_radius,
@@ -105,7 +205,8 @@ namespace meshoffsetting
                 {
                     Point3i node_id(x, y, z);
                     GridNode& cur_node = _grid.Node(node_id);
-                    if (state == GridNodeState::NodeDistanceReady)
+                    //共享节点只要属于任意一个无效子块，就必须是 NodeInvalid
+                    if (cur_node.state == GridNodeState::Unknown && state == GridNodeState::NodeDistanceReady)
                     {
                         Point3m node_pos = _grid.NodePosition(node_id);
                         ClosestPointResult closest_point = _ssvh.QueryClosestPoint(node_pos);
@@ -113,10 +214,22 @@ namespace meshoffsetting
                         int sign = CheckSign(closest_point, node_pos, is_valid);
                         if (is_valid)
                         {
+                            cur_node.state = GridNodeState::NodeDistanceReady;
                             cur_node.signed_distance = sign * closest_point.unsigned_distance;
                         }
+                        else
+                        {
+                            cur_node.state = GridNodeState::NodeInvalid;
+                        }
                     }
-                    cur_node.state = GridNodeState::NodeInvalid;
+                    else if(cur_node.state == GridNodeState::NodeDistanceReady && state == GridNodeState::NodeDistanceReady)
+                    {
+                        continue;
+                    }
+                    else
+                    {
+                        cur_node.state = GridNodeState::NodeInvalid;
+                    }
                 }
             }
         }
@@ -124,10 +237,12 @@ namespace meshoffsetting
 
     void NarrowBandSDF::Build()
     {
-        if (_offsetDistance <= kScalarTolerance)
+        if (std::abs(_offset_distance) <= kScalarTolerance)
             return;
         CreateBlocks();
         ApplyBoundingBoxFilter();
+        ApplySignedDistanceFilter();
+        ApplyOctreeFilter();
     }
 
     void NarrowBandSDF::CreateBlocks()
@@ -140,7 +255,6 @@ namespace meshoffsetting
         int count_y = std::ceil((size.Y() - 1) / _block_width);
         int count_z = std::ceil((size.Z() - 1) / _block_width);
         _blocks.clear();
-        _blocks.resize(count_x * count_y * count_z);
         for (int i = 0; i < count_x; ++i)
         {
             for (int j = 0; j < count_y; ++j)
@@ -172,9 +286,10 @@ namespace meshoffsetting
         {
             ClosestPointResult closest_point = _ssvh.QueryClosestPoint(cubic.center);
             ////用block中心点到网格的无符号距离场剔除不在窄带内的block
-            if (std::abs(closest_point.unsigned_distance - _offsetDistance) > _block_circumsphere_radius + _cell_width)
+            if (std::abs(closest_point.unsigned_distance - _offset_distance) > _block_circumsphere_radius + _cell_width)
             {
                 cubic.valid = false;
+                SetNodeState(cubic.min_node, cubic.max_node, GridNodeState::NodeInvalid);
             }
             else
             {
@@ -196,6 +311,7 @@ namespace meshoffsetting
             if (!IsBoxValidBySignedDistance(signed_distance, _block_circumsphere_radius))
             {
                 cubic.valid = false;
+                SetNodeState(cubic.min_node, cubic.max_node, GridNodeState::NodeInvalid);
             }
         }
     }
@@ -210,12 +326,20 @@ namespace meshoffsetting
         int depth = 0;
         for (int size = _block_width; size > 1; size /= 2)
             ++depth;
-        for (const GridBlock& block : _blocks)
+        for (const GridBlock& cubic : _blocks)
         {
-            if (!block.valid)
+            if (!cubic.valid)
                 continue;
-			//递归细分
-            SubdivideBlock(block.min_node, block.max_node, depth);
+			//递归细分,设置 Invalid grid nodes
+            SubdivideBlock(cubic.min_node, cubic.max_node, depth);
+        }
+
+        //设置 valid grid nodes
+        for (const GridBlock& cubic : _blocks)
+        {
+            if (!cubic.valid)
+                continue;
+            SetNodeState(cubic.min_node, cubic.max_node, GridNodeState::NodeDistanceReady);
         }
     }
 

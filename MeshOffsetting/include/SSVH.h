@@ -8,17 +8,18 @@
 #ifndef MESHOFFSETTING_SSVH_H
 #define MESHOFFSETTING_SSVH_H
 #include "CMeshO.h"
-#include "SignedDistance.h"
 #include <vector>
+#include <limits>
 namespace meshoffsetting
 {
 	struct ClosestPointResult
 	{
 		bool found = false;
 		int faceId = -1;
-		Point3m closestPoint;
+		Point3m closest_point;
 		Scalarm unsigned_distance = std::numeric_limits<Scalarm>::max();
-		Scalarm u, v = 0.0;
+		Scalarm u = 0.0;
+		Scalarm	v = 0.0;
 	};
 	
 	struct RSS
@@ -48,17 +49,18 @@ namespace meshoffsetting
 	public:
 		explicit SSVH(const CMeshO& mesh);
 		SSVH() = default;
+		~SSVH() = default;
 
 		ClosestPointResult QueryClosestPoint(const Point3m& q);
 		bool Empty() const;
 
 	private:
-		void Build(const CMeshO& mesh);
+		void Build();
 		void BuildNode(int nodeIndex, std::size_t begin, std::size_t end);
-		RSS FitRSS(std::size_t begin, std::size_t end, Point3m mean);
+		RSS FitRSS(std::size_t begin, std::size_t end, Point3m& mean);
 		Point3m FaceCentroid(int fid);
 	private:
-		int _root = 0;
+		int _root = -1;
 		CMeshO _mesh;
 		std::vector<SSVHNode> _nodes;
 		std::vector<int> _faceIndices;

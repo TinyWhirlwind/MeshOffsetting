@@ -4,8 +4,10 @@ namespace meshoffsetting
 	UniformGrid::UniformGrid(const Box3m& box, const Scalarm& offset, int block_size, const int count)
 		:_bbox(box), _cell_count(count), _block_size(block_size)
 	{
+		_bbox.Offset(std::abs(offset));
 		Scalarm max_side = std::max({ _bbox.DimX(), _bbox.DimY() ,_bbox.DimZ() });
-		_cell_width = (max_side + offset * 2)/ (count - 2);
+		_cell_width = max_side / (count - 3); //count个节点count-1个cell 左右两边再预留一个cell 模型占count-3
+		_bbox.Offset(_cell_width);
 		ComputeDimAndVoxel();
 	}
 
