@@ -37,6 +37,9 @@ namespace meshoffsetting
     public:
         NarrowBandSDF(const CMeshO& mesh,const Scalarm offsetDistance, int nodeCount = 513, int blockWidth = 8);
         ~NarrowBandSDF() = default;
+
+        //²âÊÔ½Ó¿Ú
+        UniformGrid* GetGird();
     private:
         void Build();
 		void CreateBlocks();

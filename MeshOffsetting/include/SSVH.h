@@ -29,9 +29,9 @@ namespace meshoffsetting
 		Scalarm u = 0.0;
 		Scalarm	v = 0.0;
 
-		ClosestType closestType = ClosestType::Unknown;
+		/*ClosestType closestType = ClosestType::Unknown;
 		int closestFeature = -1;
-		bool intersected = false;
+		bool intersected = false;*/
 	};
 	
 	struct RSS
@@ -73,7 +73,6 @@ namespace meshoffsetting
 		Point3m FaceCentroid(int fid);
 		void QueryNode(int node_index, const Point3m& query_p, ClosestPointResult& result);
 		void UpdateClosestPointWithTriangle(int face_index, const Point3m& query_p, ClosestPointResult& result);
-		ClosestPointResult CalcDistancePointToPrimitive(const Point3m& p, int face_index) const;
 		Scalarm DistanceToRSS(const Point3m& query_p, const RSS& bound) const;
 	private:
 		int _root = -1;

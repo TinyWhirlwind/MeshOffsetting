@@ -54,6 +54,11 @@ namespace meshoffsetting
 		return pos;
 	}
 
+	Point3m UniformGrid::NodePosition(std::size_t index)
+	{
+		return NodePosition(NodeCoord(index));
+	}
+
 	void UniformGrid::ComputeDimAndVoxel()
 	{
 		auto paddedCount = [this](Scalarm dim, Scalarm cell_width) -> int
@@ -69,5 +74,11 @@ namespace meshoffsetting
 		_voxel = Point3m(_cell_width, _cell_width, _cell_width);
 		_dim = Point3m{ _voxel.X() * count_x, _voxel.Y() * count_y, _voxel.Z() * count_z };
 		_nodes.resize(_size.X() * _size.Y() * _size.Z());
+	}
+
+
+	std::vector<GridNode> UniformGrid::GetNodes()
+	{
+		return _nodes;
 	}
 }

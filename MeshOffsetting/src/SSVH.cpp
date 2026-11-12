@@ -72,10 +72,10 @@ namespace meshoffsetting
 			std::swap(left_dis, right_dis);
 		}
 
-		if (left_child < result.unsigned_distance)
+		if (left_dis < result.unsigned_distance)
 			QueryNode(left_child, query_p, result);
-		if(right_dis < result.unsigned_distance)
-			QueryNode(right_dis, query_p, result);
+		if (right_dis < result.unsigned_distance)
+			QueryNode(right_child, query_p, result);
 	}
 
 	Scalarm SSVH::DistanceToRSS(const Point3m& query_p, const RSS& bound) const
@@ -88,12 +88,12 @@ namespace meshoffsetting
 		Scalarm du = 0.0;
 		Scalarm dv = 0.0;
 		if (u < 0)
-			u = -u;
+			du = -u;
 		else if (u > bound.lengthU)
 			du = u - bound.lengthU;
 
 		if (v < 0)
-			v = -v;
+			dv = -v;
 		else if (v > bound.lengthV)
 			dv = v - bound.lengthV;
 		Scalarm rectangleDistance = std::sqrt(du * du + dv * dv + n * n);
@@ -110,12 +110,21 @@ namespace meshoffsetting
 
 		auto setResult = [&](Scalarm s, Scalarm t)
 			{
-				result.u = s;
-				result.v = t;
-				result.closest_point = a + (b - a) * s + (c - a) * t;
-				const Point3m diff = query_p - result.closest_point;
-				result.unsigned_distance = std::sqrt(diff * diff);
-				result.intersected = result.unsigned_distance <= kScalarTolerance;
+				Point3m closest_point =
+					a + (b - a) * s + (c - a) * t;
+
+				Point3m diff = query_p - closest_point;
+				Scalarm distance = std::sqrt(diff * diff);
+
+				if (distance < result.unsigned_distance)
+				{
+					result.found = true;
+					result.u = s;
+					result.v = t;
+					result.faceId = face_index;
+					result.closest_point = closest_point;
+					result.unsigned_distance = distance;
+				}
 			};
 
 		const Point3m ab = b - a;
@@ -127,8 +136,8 @@ namespace meshoffsetting
 		if (d1 <= 0 && d2 <= 0)
 		{
 			setResult(0, 0);
-			result.closestType = ClosestType::Vertex;
-			result.closestFeature = 0; // A
+			//result.closestType = ClosestType::Vertex;
+			//result.closestFeature = 0; // A
 			return;
 		}
 
@@ -138,8 +147,8 @@ namespace meshoffsetting
 		if (d3 >= 0 && d4 <= d3)
 		{
 			setResult(1, 0);
-			result.closestType = ClosestType::Vertex;
-			result.closestFeature = 1; // B
+			//result.closestType = ClosestType::Vertex;
+			//result.closestFeature = 1; // B
 			return;
 		}
 
@@ -149,8 +158,8 @@ namespace meshoffsetting
 			const Scalarm denom = d1 - d3;
 			const Scalarm v = denom > kScalarTolerance ? d1 / denom : 0;
 			setResult(v, 0);
-			result.closestType = ClosestType::Edge;
-			result.closestFeature = 0; // AB
+			//result.closestType = ClosestType::Edge;
+			//result.closestFeature = 0; // AB
 			return ;
 		}
 
@@ -160,8 +169,8 @@ namespace meshoffsetting
 		if (d6 >= 0 && d5 <= d6)
 		{
 			setResult(0, 1);
-			result.closestType = ClosestType::Vertex;
-			result.closestFeature = 2; // C
+			//result.closestType = ClosestType::Vertex;
+			//result.closestFeature = 2; // C
 			return;
 		}
 
@@ -171,8 +180,8 @@ namespace meshoffsetting
 			const Scalarm denom = d2 - d6;
 			const Scalarm w = denom > kScalarTolerance ? d2 / denom : 0;
 			setResult(0, w);
-			result.closestType = ClosestType::Edge;
-			result.closestFeature = 2; // AC
+			//result.closestType = ClosestType::Edge;
+			//result.closestFeature = 2; // AC
 			return;
 		}
 
@@ -182,8 +191,8 @@ namespace meshoffsetting
 			const Scalarm denom = (d4 - d3) + (d5 - d6);
 			const Scalarm w = denom > kScalarTolerance ? (d4 - d3) / denom : 0;
 			setResult(1 - w, w);
-			result.closestType = ClosestType::Edge;
-			result.closestFeature = 1; // BC
+			//result.closestType = ClosestType::Edge;
+			//result.closestFeature = 1; // BC
 			return;
 		}
 
@@ -193,8 +202,8 @@ namespace meshoffsetting
 			const Scalarm v = vb / denom;
 			const Scalarm w = vc / denom;
 			setResult(v, w);
-			result.closestType = ClosestType::Face;
-			result.closestFeature = 0;
+			//result.closestType = ClosestType::Face;
+			//result.closestFeature = 0;
 		}
 		else
 		{
@@ -206,15 +215,15 @@ namespace meshoffsetting
 					u = std::clamp(u, Scalarm(0), Scalarm(1));
 
 					ClosestPointResult candidate{};
-					candidate.faceId = -1;
+					candidate.faceId = face_index;
 					//candidate._sign = 0;
-					candidate.intersected = false;
+					//candidate.intersected = false;
 					candidate.u = s0 + (s1 - s0) * u;
 					candidate.v = t0 + (t1 - t0) * u;
 					candidate.closest_point = p0 + edge * u;
 					const Point3m diff = query_p - candidate.closest_point;
 					candidate.unsigned_distance = std::sqrt(diff * diff);
-					candidate.intersected = candidate.unsigned_distance <= kScalarTolerance;
+					//candidate.intersected = candidate.unsigned_distance <= kScalarTolerance;
 					if (candidate.unsigned_distance < result.unsigned_distance)
 					{
 						result = candidate;

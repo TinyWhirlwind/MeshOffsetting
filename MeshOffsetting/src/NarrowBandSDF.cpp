@@ -2,14 +2,16 @@
 #include "NarrowBandSDF.h"
 namespace meshoffsetting
 {
-    NarrowBandSDF::NarrowBandSDF(const CMeshO& mesh, const Scalarm offsetDistance,int nodeCount, int blockWidth):
-        _mesh(mesh),
+    NarrowBandSDF::NarrowBandSDF(const CMeshO& mesh, const Scalarm offsetDistance,int nodeCount, int blockWidth) :
         _offset_distance(offsetDistance),
-        _block_width(blockWidth),
-        _ssvh(mesh),
-		_grid(mesh.bbox, offsetDistance, blockWidth, nodeCount)
+        _mesh(mesh),
+        _block_width(blockWidth)
     {
+        _mesh.updateBoxAndNormals();
+        _ssvh = SSVH(_mesh);
+        _grid = UniformGrid(_mesh.bbox,offsetDistance,blockWidth,nodeCount);
         _cell_width = _grid.GetCellWidth();
+
         _mesh.vert.EnableVFAdjacency();
         _mesh.face.EnableVFAdjacency();
         _mesh.face.EnableFFAdjacency();
@@ -17,6 +19,11 @@ namespace meshoffsetting
         vcg::tri::UpdateTopology<CMeshO>::VertexFace(_mesh);
         vcg::tri::UpdateTopology<CMeshO>::FaceFace(_mesh);
         Build();
+    }
+
+    UniformGrid* NarrowBandSDF::GetGird()
+    {
+        return &_grid;
     }
 
     ClosestFeature NarrowBandSDF::ClassifyBarycentric(Scalarm u, Scalarm v)
@@ -242,7 +249,7 @@ namespace meshoffsetting
         CreateBlocks();
         ApplyBoundingBoxFilter();
         ApplySignedDistanceFilter();
-        ApplyOctreeFilter();
+        ApplyOctreeFilter(); 
     }
 
     void NarrowBandSDF::CreateBlocks()
@@ -276,17 +283,18 @@ namespace meshoffsetting
                 }
             }
         }
-		_block_circumsphere_radius = std::sqrt(3.0) * voxel.X() * _block_width * 0.5;
+		//_block_circumsphere_radius = std::sqrt(3.0) * voxel.X() * _block_width * 0.5;
     }
     
     //Bounding Box Filter
     void NarrowBandSDF::ApplyBoundingBoxFilter()
     {
+        _block_circumsphere_radius = std::sqrt(3.0) * _cell_width * _block_width * 0.5;
         for (auto& cubic : _blocks)
         {
             ClosestPointResult closest_point = _ssvh.QueryClosestPoint(cubic.center);
-            ////用block中心点到网格的无符号距离场剔除不在窄带内的block
-            if (std::abs(closest_point.unsigned_distance - _offset_distance) > _block_circumsphere_radius + _cell_width)
+            //计算block中心点到网格的无符号距离场剔除不在窄带内的block
+            if (std::abs(closest_point.unsigned_distance - std::abs(_offset_distance)) > _block_circumsphere_radius + _cell_width)
             {
                 cubic.valid = false;
                 SetNodeState(cubic.min_node, cubic.max_node, GridNodeState::NodeInvalid);

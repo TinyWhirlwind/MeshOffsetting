@@ -11,6 +11,7 @@ set(MESHOFFSET_SOURCES
 	MeshOffsetting/src/CMeshO.cpp
 	MeshOffsetting/src/UniformGrid.cpp
 	MeshOffsetting/src/NarrowBandSDF.cpp
+	MeshOffsetting/src/SDFPlaneSlicer.cpp
 )
 
 set(MESHOFFSET_HEADERS
@@ -20,6 +21,7 @@ set(MESHOFFSET_HEADERS
 	MeshOffsetting/include/Tolerance.h
 	MeshOffsetting/include/UniformGrid.h
 	MeshOffsetting/include/NarrowBandSDF.h
+	MeshOffsetting/include/SDFPlaneSlicer.h
 )
 
 add_executable(MeshOffset
@@ -76,6 +78,7 @@ add_library(
 
 if(VCGLIB_INCLUDE_DIR)
 	message(STATUS "Using local VCGLib: ${VCGLIB_INCLUDE_DIR}")
+	set(VCGLIB_PLY_SOURCE "${VCGLIB_INCLUDE_DIR}/wrap/ply/plylib.cpp")
 	
 	target_include_directories(meshoffset_vcglib
 		SYSTEM INTERFACE
@@ -115,11 +118,15 @@ else()
     )
 
     FetchContent_MakeAvailable(vcglib)
+	set(VCGLIB_PLY_SOURCE "${vcglib_SOURCE_DIR}/wrap/ply/plylib.cpp")
 
     target_link_libraries(meshoffset_vcglib
         INTERFACE vcglib
 	)
 endif()
+
+target_sources(MeshOffset PRIVATE "${VCGLIB_PLY_SOURCE}")
+source_group("Third Party" FILES "${VCGLIB_PLY_SOURCE}")
 
 target_link_libraries(MeshOffset
 	PRIVATE MeshOffsetting::VCGLib

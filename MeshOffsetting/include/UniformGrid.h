@@ -40,6 +40,9 @@ namespace meshoffsetting
 		std::size_t NodeIndex(const Point3i& node);
 		Point3i NodeCoord(std::size_t index);
 		Point3m NodePosition(const Point3i& node);
+		Point3m NodePosition(std::size_t index);
+		//²âÊÔ½Ó¿Ú
+		std::vector<GridNode> GetNodes();
 	private:
 		Box3m _bbox;
 		Point3m _dim;
