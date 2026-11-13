@@ -34,9 +34,10 @@ namespace meshoffsetting
 		~UniformGrid();
 		UniformGrid() = default;
 
-		void GetSizeAndVoxel(Point3m& size, Point3m& voxel) const;
+		Point3i GetSize() const;
 		Scalarm GetCellWidth() const;
-		GridNode& Node(const Point3i& node);
+		Box3m GetBox() const;
+		GridNode& Node(Point3i node);
 		std::size_t NodeIndex(const Point3i& node);
 		Point3i NodeCoord(std::size_t index);
 		Point3m NodePosition(const Point3i& node);

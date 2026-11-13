@@ -1,4 +1,5 @@
 #include "SSVH.h"
+#include "Tolerance.h"
 #include <algorithm>
 #include <Eigen/Dense>
 namespace meshoffsetting

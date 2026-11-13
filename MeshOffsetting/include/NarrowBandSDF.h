@@ -1,5 +1,5 @@
 /**
- * @file NarrowBandFilter.h
+ * @file NarrowBandSDF.h
  * @author zhangpingping
  * @date 2026-11-07
  * @brief
@@ -35,7 +35,7 @@ namespace meshoffsetting
         };
 
     public:
-        NarrowBandSDF(const CMeshO& mesh,const Scalarm offsetDistance, int nodeCount = 513, int blockWidth = 8);
+        NarrowBandSDF(const CMeshO& mesh,const Scalarm offsetDistance, int nodeCount = 129, int blockWidth = 8);
         ~NarrowBandSDF() = default;
 
         //²âÊÔ½Ó¿Ú

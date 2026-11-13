@@ -29,9 +29,6 @@ typedef vcg::Shot<MESHLAB_SCALAR>       Shotm;
 typedef vcg::Similarity<MESHLAB_SCALAR> Similaritym;
 typedef vcg::Ray3<MESHLAB_SCALAR> Ray3m;
 
-inline constexpr Scalarm kScalarTolerance = std::numeric_limits<Scalarm>::epsilon() * Scalarm(64);
-inline constexpr Scalarm kScalarToleranceSquared = kScalarTolerance * kScalarTolerance;
-
 template<typename T>
 struct MeshLabScalarTest
 {

@@ -15,10 +15,9 @@ namespace meshoffsetting
 	{
 	}
 
-	void UniformGrid::GetSizeAndVoxel(Point3m& size, Point3m& voxel) const
+	Point3i UniformGrid::GetSize() const
 	{
-		size = _size;
-		voxel = _voxel;
+		return _size;
 	}
 
 	Scalarm UniformGrid::GetCellWidth() const
@@ -26,7 +25,12 @@ namespace meshoffsetting
 		return _cell_width;
 	}
 
-	GridNode& UniformGrid::Node(const Point3i& node)
+	Box3m UniformGrid::GetBox() const
+	{
+		return _bbox;
+	}
+
+	GridNode& UniformGrid::Node(Point3i node)
 	{
 		size_t index = node.X() + node.Y() * _size.X() + node.Z() * _size.X() * _size.Y();
 		return _nodes[index];

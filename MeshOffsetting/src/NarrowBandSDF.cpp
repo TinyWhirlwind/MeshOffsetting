@@ -1,4 +1,5 @@
 #include "CMeshO.h"
+#include "Tolerance.h"
 #include "NarrowBandSDF.h"
 namespace meshoffsetting
 {
@@ -254,9 +255,7 @@ namespace meshoffsetting
 
     void NarrowBandSDF::CreateBlocks()
     {
-        Point3m size;
-        Point3m voxel;
-        _grid.GetSizeAndVoxel(size, voxel);
+        Point3m size = _grid.GetSize();
 
         int count_x = std::ceil((size.X() - 1) / _block_width);
         int count_y = std::ceil((size.Y() - 1) / _block_width);
@@ -283,7 +282,6 @@ namespace meshoffsetting
                 }
             }
         }
-		//_block_circumsphere_radius = std::sqrt(3.0) * voxel.X() * _block_width * 0.5;
     }
     
     //Bounding Box Filter

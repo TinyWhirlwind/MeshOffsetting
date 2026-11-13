@@ -1,5 +1,5 @@
 #include "CMeshO.h"
-#include "NarrowBandSDF.h"
+#include "SlicerSDF.h"
 #include <wrap/io_trimesh/export_ply.h>
 #include <wrap/io_trimesh/import_stl.h>
 using namespace meshoffsetting;
@@ -10,10 +10,10 @@ int main()
     CMeshO mesh;
     int load_mask = 0;
     vcg::tri::io::ImporterSTL<CMeshO>::Open(mesh, input_path, load_mask);
-    NarrowBandSDF sdf(mesh, 0.01,129,8);
+    CMeshO point_cloud;
+    NarrowBandSDF sdf(mesh, -0.05,129,8);
     auto grid = sdf.GetGird();
     auto nodes = grid->GetNodes();
-    CMeshO point_cloud;
     for (int i = 0; i < nodes.size(); ++i)
     {
         Point3m pos = grid->NodePosition(i);
@@ -22,7 +22,7 @@ int main()
             auto vt = vcg::tri::Allocator<CMeshO>::AddVertex(point_cloud, pos);
             vt->C() = vcg::Color4b(255, 0, 0, 255);
         }
-    }
+    } 
     vcg::tri::io::ExporterPLY<CMeshO>::Save(point_cloud, output_path, vcg::tri::io::Mask::IOM_VERTCOLOR);
     return 0;
 }

@@ -11,7 +11,7 @@ set(MESHOFFSET_SOURCES
 	MeshOffsetting/src/CMeshO.cpp
 	MeshOffsetting/src/UniformGrid.cpp
 	MeshOffsetting/src/NarrowBandSDF.cpp
-	MeshOffsetting/src/SDFPlaneSlicer.cpp
+	MeshOffsetting/src/SlicerSDF.cpp
 )
 
 set(MESHOFFSET_HEADERS
@@ -21,7 +21,7 @@ set(MESHOFFSET_HEADERS
 	MeshOffsetting/include/Tolerance.h
 	MeshOffsetting/include/UniformGrid.h
 	MeshOffsetting/include/NarrowBandSDF.h
-	MeshOffsetting/include/SDFPlaneSlicer.h
+	MeshOffsetting/include/SlicerSDF.h
 )
 
 add_executable(MeshOffset
