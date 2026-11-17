@@ -63,7 +63,7 @@ namespace meshoffsetting
 		SSVH() = default;
 		~SSVH() = default;
 
-		ClosestPointResult QueryClosestPoint(const Point3m& q);
+		ClosestPointResult QueryClosestPoint(const Point3m& q) const;
 		bool Empty() const;
 
 	private:
@@ -71,8 +71,8 @@ namespace meshoffsetting
 		void BuildNode(int nodeIndex, std::size_t begin, std::size_t end);
 		RSS FitRSS(std::size_t begin, std::size_t end, Point3m& mean);
 		Point3m FaceCentroid(int fid);
-		void QueryNode(int node_index, const Point3m& query_p, ClosestPointResult& result);
-		void UpdateClosestPointWithTriangle(int face_index, const Point3m& query_p, ClosestPointResult& result);
+		void QueryNode(int node_index, const Point3m& query_p, ClosestPointResult& result) const;
+		void UpdateClosestPointWithTriangle(int face_index, const Point3m& query_p, ClosestPointResult& result) const;
 		Scalarm DistanceToRSS(const Point3m& query_p, const RSS& bound) const;
 	private:
 		int _root = -1;

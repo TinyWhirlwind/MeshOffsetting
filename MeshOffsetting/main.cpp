@@ -3,6 +3,8 @@
 #include <wrap/io_trimesh/export_ply.h>
 #include <wrap/io_trimesh/import_stl.h>
 #include <wrap/io_trimesh/import_obj.h>
+#include <chrono>
+#include <iostream>
 using namespace meshoffsetting;
 int main()
 {
@@ -14,7 +16,7 @@ int main()
     //vcg::tri::io::ImporterSTL<CMeshO>::Open(mesh, input_path, load_mask);
     vcg::tri::io::ImporterOBJ<CMeshO>::Open(mesh, input_path, load_mask);
     CMeshO point_cloud;
-
+#if 0
     NarrowBandSDF sdf(mesh, 0,129,8);
     auto grid = sdf.GetGird();
     auto nodes = grid->GetNodes();
@@ -26,41 +28,32 @@ int main()
             auto vt = vcg::tri::Allocator<CMeshO>::AddVertex(point_cloud, pos);
             vt->C() = vcg::Color4b(255, 0, 0, 255);
         }
-    } 
-
-#if 0
+    }
+#endif
+    /*vcg::tri::Clean<CMeshO>::RemoveDuplicateVertex(mesh);
+    vcg::tri::Clean<CMeshO>::RemoveUnreferencedVertex(mesh);
+    vcg::tri::Allocator<CMeshO>::CompactEveryVector(mesh);*/
     mesh.updateBoxAndNormals();
     Scalarm thickness = 0.02;
     int n_layer = (mesh.bbox.max.Z() - mesh.bbox.min.Z())/ thickness;
-    SlicerSDF sdf(mesh, -0.01,65);
+    auto start_time = std::chrono::steady_clock::now();
+    SlicerSDF sdf(mesh, -0.1);
     sdf.StartSlicerAll(n_layer, thickness);
+    auto end_time = std::chrono::steady_clock::now();
+    std::chrono::duration<double> elapsed_time = end_time - start_time;
+    std::cout << "SDF and slicing time: "<< elapsed_time.count() << " seconds\n";
     std::vector<SliceResult> result = sdf.GetLayers();
     for (int i =0;i< result.size();++i)
     {
-        if (i % 2 == 0)
+        for (auto& ct : result[i].contours)
         {
-            for (auto& ct : result[i].contours)
+            for (auto& pt : ct)
             {
-                for (auto& pt : ct)
-                {
-                    auto vt = vcg::tri::Allocator<CMeshO>::AddVertex(point_cloud, pt);
-                    vt->C() = vcg::Color4b(255, 0, 0, 255);
-                }
-            }
-        }
-        else
-        {
-            for (auto& ct : result[i].contours)
-            {
-                for (auto& pt : ct)
-                {
-                    auto vt = vcg::tri::Allocator<CMeshO>::AddVertex(point_cloud, pt);
-                    vt->C() = vcg::Color4b(0, 255, 0, 255);
-                }
+                auto vt = vcg::tri::Allocator<CMeshO>::AddVertex(point_cloud, pt);
+                vt->C() = vcg::Color4b(255, 0, 0, 255);
             }
         }
     }
-#endif
     vcg::tri::io::ExporterPLY<CMeshO>::Save(point_cloud, output_path, vcg::tri::io::Mask::IOM_VERTCOLOR);
     return 0;
 }

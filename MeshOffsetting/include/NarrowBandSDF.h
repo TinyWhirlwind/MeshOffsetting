@@ -52,11 +52,12 @@ namespace meshoffsetting
 		void SubdivideBlock(const Point3i& min_node, const Point3i& max_node,int depth);
         int CheckSign(ClosestPointResult query_result, Point3m center, bool& is_valid);
         bool IsBoxValidBySignedDistance(Scalarm signed_distance, Scalarm circumsphere_radius) const;
-        void SetNodeState(const Point3i& min_node, const Point3i& max_node, GridNodeState state);
+        void MarkNodeRangeInvalid(const Point3i& min_node, const Point3i& max_node);
 
         void ApplyBoundingBoxFilter();
         void ApplySignedDistanceFilter();
         void ApplyOctreeFilter();
+        void ComputeRemainingNodeDistances();
     private:
         Scalarm _offset_distance = 0;
         Scalarm _cell_width = 0;

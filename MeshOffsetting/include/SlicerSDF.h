@@ -18,7 +18,7 @@ namespace meshoffsetting
 	class SlicerSDF
 	{
 	public:
-		SlicerSDF(const CMeshO& mesh, Scalarm offset, int nodeCount = 129, int blockWidth = 8);
+		SlicerSDF(const CMeshO& mesh, Scalarm offset, int nodeCount = 257, int blockWidth = 8);
 		~SlicerSDF() = default;
 		SlicerSDF(const SlicerSDF&) = delete;
 		SlicerSDF& operator=(const SlicerSDF&) = delete;
@@ -31,7 +31,7 @@ namespace meshoffsetting
 
 
 		//²âÊÔ
-		const std::vector<Point3m>& GetErrorNode();
+		//const std::vector<Point3m>& GetErrorNode();
 	private:
 		struct PlaneField
 		{
@@ -46,22 +46,51 @@ namespace meshoffsetting
 			std::vector<std::size_t> neighbours;
 		};
 
-		void BuildPlaneField(Scalarm zi);
-		bool HasStoredNodeInCell(
+		struct LayerWorkspace
+		{
+			PlaneField plane_grid;
+			std::vector<ContourNode> contour_nodes;
+			// Íø¸ñ±ßÁ½¶ËµÄ¶¥µã ID -> ÂÖÀª½»µã ID¡£
+			std::map<std::pair<std::size_t, std::size_t>, std::size_t> crossing_ids;
+			std::vector<Point3m> error_nodes;
+		};
+
+		void InitializeWorkspace(LayerWorkspace& workspace) const;
+		bool ComputeSlicePosition(
+			Scalarm zi,
+			int& lower_z,
+			Scalarm& weight,
+			bool& needs_upper) const;
+		bool PrepareDistanceCache(const std::vector<Scalarm>& slice_z_values);
+		bool GetGridNodeDistance(
 			int x,
 			int y,
-			int lower_z,
-			bool needs_upper);
+			int z,
+			Scalarm& distance);
+		bool GetCachedGridNodeDistance(
+			int x,
+			int y,
+			int z,
+			Scalarm& distance) const;
+		SliceResult SliceAtZImpl(Scalarm zi, LayerWorkspace& workspace) const;
+		bool BuildPlaneField(Scalarm zi, LayerWorkspace& workspace) const;
 		bool FillPlaneNode(
 			int x,
 			int y,
 			int lower_z,
 			Scalarm weight,
-			bool needs_upper);
-		void ProcessCell(int x, int y, SliceResult& result);
-		std::size_t GetOrCreateCrossing(int ax, int ay, int bx, int by, Scalarm zi);
-		void Connect(std::size_t a, std::size_t b);
-		void TraceContours(SliceResult& result);
+			bool needs_upper,
+			LayerWorkspace& workspace) const;
+		void ProcessCell(int x, int y, SliceResult& result, LayerWorkspace& workspace) const;
+		std::size_t GetOrCreateCrossing(
+			int ax,
+			int ay,
+			int bx,
+			int by,
+			Scalarm zi,
+			LayerWorkspace& workspace) const;
+		void Connect(std::size_t a, std::size_t b, LayerWorkspace& workspace) const;
+		void TraceContours(SliceResult& result, LayerWorkspace& workspace) const;
 		static bool SamePoint(const Point3m& a, const Point3m& b);
 		static bool HasArea(const std::vector<Point3m>& contour);
 	private:
@@ -71,17 +100,14 @@ namespace meshoffsetting
 		Scalarm _offset = 0.0;
 		Scalarm _cell_width = 0;
 
-		PlaneField _plane_grid;
+		std::vector<Scalarm> _distance_cache;
+		std::vector<unsigned char> _distance_cached;
 		Box3m _bbox;
 
 		int _size_x = 0;
 		int _size_y = 0;
 		int _size_z = 0;
-		std::vector<ContourNode> _contour_nodes;
-
-		// Íø¸ñ±ßÁ½¶ËµÄ¶¥µã ID -> ÂÖÀª½»µã ID¡£
-		std::map<std::pair<std::size_t, std::size_t>, std::size_t> _crossing_ids;
 		std::vector<SliceResult> _layers;
-		std::vector<Point3m> _error_nodes;
+		//std::vector<Point3m> _error_nodes;
 	};
 }

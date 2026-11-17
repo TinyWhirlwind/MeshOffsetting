@@ -1,7 +1,10 @@
 #include "SlicerSDF.h"
 #include "Tolerance.h"
 #include <algorithm>
+#include <atomic>
 #include <cmath>
+#include <cstddef>
+#include <exception>
 #include <stdexcept>
 
 namespace meshoffsetting
@@ -36,12 +39,12 @@ namespace meshoffsetting
                 "Invalid cell width or offset");
         }
 
-        _plane_grid.values.assign(
-            _size_x,
-            std::vector<Scalarm>(_size_y, Scalarm(0)));
-        _plane_grid.valid.assign(
-            _size_x,
-            std::vector<bool>(_size_y, false));
+        const std::size_t node_count =
+            static_cast<std::size_t>(_size_x) *
+            static_cast<std::size_t>(_size_y) *
+            static_cast<std::size_t>(_size_z);
+        _distance_cache.assign(node_count, Scalarm(0));
+        _distance_cached.assign(node_count, false);
     }
 
     void SlicerSDF::StartSlicerOne(int layer, Scalarm layer_thickness)
@@ -53,6 +56,7 @@ namespace meshoffsetting
                 "Invalid layer or layer thickness");
         }
 
+        //_error_nodes.clear();
         Scalarm z = _bbox.min.Z() + (layer + 1.0) * layer_thickness;
 
         std::vector<SliceResult> results;
@@ -66,8 +70,10 @@ namespace meshoffsetting
             throw std::invalid_argument(
                 "Invalid layer count or layer thickness");
         }
+        //_error_nodes.clear();
         Scalarm max_z =_bbox.min.Z() + (_size_z - 1) * _cell_width;
-        std::vector<SliceResult> results;
+        std::vector<Scalarm> slice_z_values;
+        slice_z_values.reserve(static_cast<std::size_t>(layer_count));
         for (int layer = 0; layer < layer_count; layer++)
         {
             Scalarm zi = _bbox.min.Z() + (layer + 1) * layer_thickness;
@@ -75,7 +81,93 @@ namespace meshoffsetting
             {
                 break;
             }
-            results.push_back(SliceAtZ(zi));
+            slice_z_values.push_back(zi);
+        }
+
+        std::vector<SliceResult> results(slice_z_values.size());
+        if (slice_z_values.empty())
+        {
+            _layers.swap(results);
+            return;
+        }
+
+        if (!PrepareDistanceCache(slice_z_values))
+        {
+            for (std::size_t i = 0; i < results.size(); ++i)
+            {
+                results[i].z = slice_z_values[i];
+                results[i].skipped_cells =
+                    static_cast<std::size_t>(_size_x - 1) *
+                    static_cast<std::size_t>(_size_y - 1);
+            }
+            _layers.swap(results);
+            return;
+        }
+
+        std::vector<std::vector<Point3m>> layer_errors(
+            slice_z_values.size());
+        std::atomic<bool> failed(false);
+        std::exception_ptr first_exception;
+
+#pragma omp parallel
+        {
+            LayerWorkspace workspace;
+            bool workspace_ready = true;
+            try
+            {
+                InitializeWorkspace(workspace);
+            }
+            catch (...)
+            {
+#pragma omp critical(SlicerSDFException)
+                {
+                    if (!first_exception)
+                    {
+                        first_exception = std::current_exception();
+                    }
+                }
+                failed.store(true);
+                workspace_ready = false;
+            }
+
+#pragma omp for schedule(dynamic)
+            for (int layer = 0;
+                 layer < static_cast<int>(slice_z_values.size());
+                 ++layer)
+            {
+                if (!workspace_ready || failed.load())
+                {
+                    continue;
+                }
+
+                try
+                {
+                    results[layer] = SliceAtZImpl(
+                        slice_z_values[layer], workspace);
+                    layer_errors[layer] = workspace.error_nodes;
+                }
+                catch (...)
+                {
+#pragma omp critical(SlicerSDFException)
+                    {
+                        if (!first_exception)
+                        {
+                            first_exception = std::current_exception();
+                        }
+                    }
+                    failed.store(true);
+                }
+            }
+        }
+
+        if (first_exception)
+        {
+            std::rethrow_exception(first_exception);
+        }
+
+        for (const std::vector<Point3m>& errors : layer_errors)
+        {
+            //_error_nodes.insert(_error_nodes.end(), errors.begin(), errors.end());
         }
         _layers.swap(results);
     }
@@ -85,104 +177,280 @@ namespace meshoffsetting
         return _layers;
     }
 
-    const std::vector<Point3m>& SlicerSDF::GetErrorNode()
+    /*const std::vector<Point3m>& SlicerSDF::GetErrorNode()
     {
         return _error_nodes;
-    }
+    }*/
 
     SliceResult SlicerSDF::SliceAtZ(Scalarm zi)
     {
+        //_error_nodes.clear();
         SliceResult result;
         result.z = zi;
-        _contour_nodes.clear();
-        _crossing_ids.clear();
-        BuildPlaneField(zi);
+
+        std::vector<Scalarm> slice_z_values(1, zi);
+        if (!PrepareDistanceCache(slice_z_values))
+        {
+            result.skipped_cells =
+                static_cast<std::size_t>(_size_x - 1) *
+                static_cast<std::size_t>(_size_y - 1);
+            return result;
+        }
+
+        LayerWorkspace workspace;
+        InitializeWorkspace(workspace);
+        result = SliceAtZImpl(zi, workspace);
+        //_error_nodes = workspace.error_nodes;
+        return result;
+    }
+
+    void SlicerSDF::InitializeWorkspace(
+        LayerWorkspace& workspace) const
+    {
+        workspace.plane_grid.values.assign(
+            _size_x,
+            std::vector<Scalarm>(_size_y, Scalarm(0)));
+        workspace.plane_grid.valid.assign(
+            _size_x,
+            std::vector<bool>(_size_y, false));
+
+        const std::size_t edge_count =
+            static_cast<std::size_t>(_size_x - 1) * _size_y +
+            static_cast<std::size_t>(_size_y - 1) * _size_x;
+        const std::size_t initial_capacity =
+            std::min(edge_count, std::size_t(16384));
+        workspace.contour_nodes.reserve(initial_capacity);
+    }
+
+    bool SlicerSDF::ComputeSlicePosition(
+        Scalarm zi,
+        int& lower_z,
+        Scalarm& weight,
+        bool& needs_upper) const
+    {
+        Scalarm grid_z = (zi - _bbox.min.Z()) / _cell_width;
+        Scalarm max_grid_z = static_cast<Scalarm>(_size_z - 1);
+        if (!std::isfinite(grid_z) || grid_z < 0 || grid_z > max_grid_z)
+        {
+            return false;
+        }
+
+        lower_z = static_cast<int>(std::floor(grid_z));
+        weight = grid_z - lower_z;
+        needs_upper = weight > kScalarTolerance;
+        return !needs_upper || lower_z + 1 < _size_z;
+    }
+
+    bool SlicerSDF::PrepareDistanceCache(
+        const std::vector<Scalarm>& slice_z_values)
+    {
+        const std::size_t node_count =
+            static_cast<std::size_t>(_size_x) *
+            static_cast<std::size_t>(_size_y) *
+            static_cast<std::size_t>(_size_z);
+        std::vector<unsigned char> needed_nodes(node_count, 0);
+
+        for (Scalarm zi : slice_z_values)
+        {
+            int lower_z = 0;
+            Scalarm weight = 0;
+            bool needs_upper = false;
+            if (!ComputeSlicePosition(
+                zi, lower_z, weight, needs_upper))
+            {
+                return false;
+            }
+
+            for (int x = 0; x + 1 < _size_x; x++)
+            {
+                for (int y = 0; y + 1 < _size_y; y++)
+                {
+                    bool candidate_cell = false;
+                    for (int dx = 0; dx <= 1; dx++)
+                    {
+                        for (int dy = 0; dy <= 1; dy++)
+                        {
+                            GridNode& lower = _grid->Node(
+                                Point3i(x + dx, y + dy, lower_z));
+                            if (lower.state == GridNodeState::NodeDistanceReady)
+                            {
+                                candidate_cell = true;
+                            }
+
+                            if (needs_upper)
+                            {
+                                GridNode& upper = _grid->Node(
+                                    Point3i(x + dx, y + dy, lower_z + 1));
+                                if (upper.state == GridNodeState::NodeDistanceReady)
+                                {
+                                    candidate_cell = true;
+                                }
+                            }
+                        }
+                    }
+
+                    if (!candidate_cell)
+                    {
+                        continue;
+                    }
+
+                    for (int dx = 0; dx <= 1; dx++)
+                    {
+                        for (int dy = 0; dy <= 1; dy++)
+                        {
+                            Point3i lower_id(x + dx, y + dy, lower_z);
+                            needed_nodes[_grid->NodeIndex(lower_id)] = 1;
+
+                            if (needs_upper)
+                            {
+                                Point3i upper_id(
+                                    x + dx, y + dy, lower_z + 1);
+                                needed_nodes[_grid->NodeIndex(upper_id)] = 1;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        std::vector<std::size_t> node_indices;
+        for (std::size_t index = 0; index < needed_nodes.size(); index++)
+        {
+            if (needed_nodes[index])
+            {
+                node_indices.push_back(index);
+            }
+        }
+
+        const std::ptrdiff_t task_count =
+            static_cast<std::ptrdiff_t>(node_indices.size());
+#pragma omp parallel for schedule(guided, 64)
+        for (std::ptrdiff_t task = 0; task < task_count; ++task)
+        {
+            const std::size_t index =
+                node_indices[static_cast<std::size_t>(task)];
+            Point3i node = _grid->NodeCoord(index);
+
+            Scalarm distance = 0;
+            GetGridNodeDistance(
+                node.X(), node.Y(), node.Z(), distance);
+        }
+
+        return true;
+    }
+
+    SliceResult SlicerSDF::SliceAtZImpl(
+        Scalarm zi,
+        LayerWorkspace& workspace) const
+    {
+        SliceResult result;
+        result.z = zi;
+        workspace.contour_nodes.clear();
+        workspace.crossing_ids.clear();
+        workspace.error_nodes.clear();
+
+        if (!BuildPlaneField(zi, workspace))
+        {
+            result.skipped_cells =
+                static_cast<std::size_t>(_size_x - 1) *
+                static_cast<std::size_t>(_size_y - 1);
+            return result;
+        }
+
         for (int x = 0; x + 1 < _size_x; x++)
         {
             for (int y = 0; y + 1 < _size_y; y++)
             {
-                ProcessCell(x, y, result);
+                ProcessCell(x, y, result, workspace);
             }
         }
-        TraceContours(result);
+        TraceContours(result, workspace);
         return result;
     }
 
-    void SlicerSDF::BuildPlaneField(Scalarm zi)
+    bool SlicerSDF::BuildPlaneField(
+        Scalarm zi,
+        LayerWorkspace& workspace) const
     {
         for (int x = 0; x < _size_x; x++)
         {
             for (int y = 0; y < _size_y; y++)
             {
-                _plane_grid.values[x][y] = 0;
-                _plane_grid.valid[x][y] = false;
+                workspace.plane_grid.values[x][y] = 0;
+                workspace.plane_grid.valid[x][y] = false;
             }
         }
 
-        Scalarm grid_z = (zi - _bbox.min.Z()) / _cell_width;
-        Scalarm max_grid_z = static_cast<Scalarm>(_size_z - 1);
-        if (!std::isfinite(grid_z) || grid_z < 0 || grid_z > max_grid_z)
+        int lower_z = 0;
+        Scalarm weight = 0;
+        bool needs_upper = false;
+        if (!ComputeSlicePosition(
+            zi, lower_z, weight, needs_upper))
         {
-            return;
+            return false;
         }
 
-        int lower_z = static_cast<int>(std::floor(grid_z));
-        Scalarm weight = grid_z - lower_z;
-        bool needs_upper = weight > kScalarTolerance;
-        if (needs_upper && lower_z + 1 >= _size_z)
+        for (int x = 0; x < _size_x; x++)
         {
-            return;
-        }
-
-        for (int x = 0; x + 1 < _size_x; x++)
-        {
-            for (int y = 0; y + 1 < _size_y; y++)
+            for (int y = 0; y < _size_y; y++)
             {
-                // 论文窄带中只要这个体素已有一个有效节点，
-                // 它就可能是切片需要检查的候选体素。
-                if (!HasStoredNodeInCell(
-                    x, y, lower_z, needs_upper))
-                {
-                    continue;
-                }
-
-                FillPlaneNode(x, y, lower_z, weight, needs_upper);
-                FillPlaneNode(x + 1, y, lower_z, weight, needs_upper);
-                FillPlaneNode(x + 1, y + 1, lower_z, weight, needs_upper);
-                FillPlaneNode(x, y + 1, lower_z, weight, needs_upper);
+                FillPlaneNode(
+                    x, y, lower_z, weight, needs_upper, workspace);
             }
         }
+
+        return true;
     }
 
-    bool SlicerSDF::HasStoredNodeInCell(
+    bool SlicerSDF::GetGridNodeDistance(
         int x,
         int y,
-        int lower_z,
-        bool needs_upper)
+        int z,
+        Scalarm& distance)
     {
-        for (int dx = 0; dx <= 1; dx++)
+        Point3i node_id(x, y, z);
+        const std::size_t index = _grid->NodeIndex(node_id);
+        if (_distance_cached[index])
         {
-            for (int dy = 0; dy <= 1; dy++)
-            {
-                GridNode& lower =
-                    _grid->Node(Point3i(x + dx, y + dy, lower_z));
-                if (lower.state == GridNodeState::NodeDistanceReady)
-                {
-                    return true;
-                }
-
-                if (needs_upper)
-                {
-                    GridNode& upper = _grid->Node(
-                        Point3i(x + dx, y + dy, lower_z + 1));
-                    if (upper.state == GridNodeState::NodeDistanceReady)
-                    {
-                        return true;
-                    }
-                }
-            }
+            distance = _distance_cache[index];
+            return true;
         }
-        return false;
+
+        GridNode& node = _grid->Node(node_id);
+        if (node.state == GridNodeState::NodeDistanceReady &&
+            std::isfinite(node.signed_distance))
+        {
+            distance = node.signed_distance;
+        }
+        else if (!_nsdf.QuerySignedDistance(
+                     _grid->NodePosition(node_id), distance) ||
+                 !std::isfinite(distance))
+        {
+            return false;
+        }
+
+        _distance_cache[index] = distance;
+        _distance_cached[index] = true;
+        return true;
+    }
+
+    bool SlicerSDF::GetCachedGridNodeDistance(
+        int x,
+        int y,
+        int z,
+        Scalarm& distance) const
+    {
+        const std::size_t index =
+            static_cast<std::size_t>(x) +
+            static_cast<std::size_t>(y) * _size_x +
+            static_cast<std::size_t>(z) * _size_x * _size_y;
+        if (!_distance_cached[index])
+        {
+            return false;
+        }
+
+        distance = _distance_cache[index];
+        return std::isfinite(distance);
     }
 
     bool SlicerSDF::FillPlaneNode(
@@ -190,21 +458,17 @@ namespace meshoffsetting
         int y,
         int lower_z,
         Scalarm weight,
-        bool needs_upper)
+        bool needs_upper,
+        LayerWorkspace& workspace) const
     {
-        if (_plane_grid.valid[x][y])
+        if (workspace.plane_grid.valid[x][y])
         {
             return true;
         }
 
-        Point3i lower_id(x, y, lower_z);
-        GridNode& lower = _grid->Node(lower_id);
         Scalarm lower_distance = 0;
-        if (lower.state == GridNodeState::NodeDistanceReady)
-        {
-            lower_distance = lower.signed_distance;
-        }
-        else if (!_nsdf.QuerySignedDistance(_grid->NodePosition(lower_id), lower_distance))
+        if (!GetCachedGridNodeDistance(
+            x, y, lower_z, lower_distance))
         {
             return false;
         }
@@ -212,15 +476,9 @@ namespace meshoffsetting
         Scalarm distance = lower_distance;
         if (needs_upper)
         {
-            Point3i upper_id(x, y, lower_z + 1);
-            GridNode& upper = _grid->Node(upper_id);
             Scalarm upper_distance = 0;
-            if (upper.state == GridNodeState::NodeDistanceReady)
-            {
-                upper_distance = upper.signed_distance;
-            }
-            else if (!_nsdf.QuerySignedDistance(
-                _grid->NodePosition(upper_id), upper_distance))
+            if (!GetCachedGridNodeDistance(
+                x, y, lower_z + 1, upper_distance))
             {
                 return false;
             }
@@ -229,12 +487,16 @@ namespace meshoffsetting
                 + upper_distance * weight;
         }
 
-        _plane_grid.values[x][y] = distance - _offset;
-        _plane_grid.valid[x][y] = true;
+        workspace.plane_grid.values[x][y] = distance - _offset;
+        workspace.plane_grid.valid[x][y] = true;
         return true;
     }
 
-    void SlicerSDF::ProcessCell( int x,int y, SliceResult& result)
+    void SlicerSDF::ProcessCell(
+        int x,
+        int y,
+        SliceResult& result,
+        LayerWorkspace& workspace) const
     {
         /*
             顶点编号：
@@ -253,15 +515,13 @@ namespace meshoffsetting
         int valid_count = 0;
         for (int k = 0; k < 4; k++)
         {
-            if (_plane_grid.valid[xs[k]][ys[k]])
+            if (workspace.plane_grid.valid[xs[k]][ys[k]])
             {
-                values[k] = _plane_grid.values[xs[k]][ys[k]];
+                values[k] = workspace.plane_grid.values[xs[k]][ys[k]];
                 valid_count++;
             }
         }
 
-        // 四个角点都有标量值，才能确定16种情况中的一种。
-        // 这不是Marching Squares的一种case，而是输入场是否完整的检查。
         if (valid_count != 4)
         {
             if (valid_count != 0)
@@ -281,12 +541,6 @@ namespace meshoffsetting
                 return;
             }
 
-            // 统一把非常接近0的值放到外侧，避免同一节点在相邻cell中分类不同。
-            if (std::abs(values[k]) <= kScalarTolerance)
-            {
-                values[k] = kScalarTolerance;
-            }
-
             inside[k] = values[k] < 0;
             if (inside[k])
             {
@@ -294,7 +548,6 @@ namespace meshoffsetting
             }
         }
 
-        // case 0和15没有交线。
         if (case_id == 0 || case_id == 15)
         {
             return;
@@ -313,39 +566,39 @@ namespace meshoffsetting
             edge_nodes[edge] = GetOrCreateCrossing(
                 xs[a], ys[a],
                 xs[b], ys[b],
-                result.z);
+                result.z,
+                workspace);
         }
 
         switch (case_id)
         {
         case 1:
         case 14:
-            Connect(edge_nodes[3], edge_nodes[0]);
+            Connect(edge_nodes[3], edge_nodes[0], workspace);
             break;
         case 2:
         case 13:
-            Connect(edge_nodes[0], edge_nodes[1]);
+            Connect(edge_nodes[0], edge_nodes[1], workspace);
             break;
         case 3:
         case 12:
-            Connect(edge_nodes[1], edge_nodes[3]);
+            Connect(edge_nodes[1], edge_nodes[3], workspace);
             break;
         case 4:
         case 11:
-            Connect(edge_nodes[1], edge_nodes[2]);
+            Connect(edge_nodes[1], edge_nodes[2], workspace);
             break;
         case 6:
         case 9:
-            Connect(edge_nodes[0], edge_nodes[2]);
+            Connect(edge_nodes[0], edge_nodes[2], workspace);
             break;
         case 7:
         case 8:
-            Connect(edge_nodes[2], edge_nodes[3]);
+            Connect(edge_nodes[2], edge_nodes[3], workspace);
             break;
         case 5:
         case 10:
         {
-            // case 5和10有四个交点，使用双线性插值的渐近判别。
             Scalarm scale = 0;
             for (int k = 0; k < 4; k++)
             {
@@ -356,16 +609,15 @@ namespace meshoffsetting
             Scalarm f2 = values[2] / scale;
             Scalarm f3 = values[3] / scale;
             Scalarm q = f0 * f2 - f1 * f3;
-            // q == 0 时固定选择第一种配对。
             if (q >= 0)
             {
-                Connect(edge_nodes[0], edge_nodes[1]);
-                Connect(edge_nodes[2], edge_nodes[3]);
+                Connect(edge_nodes[0], edge_nodes[1], workspace);
+                Connect(edge_nodes[2], edge_nodes[3], workspace);
             }
             else
             {
-                Connect(edge_nodes[0], edge_nodes[3]);
-                Connect(edge_nodes[1], edge_nodes[2]);
+                Connect(edge_nodes[0], edge_nodes[3], workspace);
+                Connect(edge_nodes[1], edge_nodes[2], workspace);
             }
             break;
         }
@@ -374,7 +626,13 @@ namespace meshoffsetting
         }
     }
 
-    std::size_t SlicerSDF::GetOrCreateCrossing(int ax,int ay,int bx,int by,Scalarm zi)
+    std::size_t SlicerSDF::GetOrCreateCrossing(
+        int ax,
+        int ay,
+        int bx,
+        int by,
+        Scalarm zi,
+        LayerWorkspace& workspace) const
     {
         std::size_t id_a = static_cast<std::size_t>(ax) * _size_y + ay;
         std::size_t id_b = static_cast<std::size_t>(bx) * _size_y + by;
@@ -388,22 +646,12 @@ namespace meshoffsetting
             key = std::make_pair(id_b, id_a);
         }
         std::map<std::pair<std::size_t, std::size_t>,std::size_t>::iterator found;
-        found = _crossing_ids.find(key);
-        if (found != _crossing_ids.end()) {
+        found = workspace.crossing_ids.find(key);
+        if (found != workspace.crossing_ids.end()) {
             return found->second;
         }
-        Scalarm value_a = _plane_grid.values[ax][ay];
-        Scalarm value_b = _plane_grid.values[bx][by];
-
-        // 与ProcessCell使用同一个零值规则。
-        if (std::abs(value_a) <= kScalarTolerance)
-        {
-            value_a = kScalarTolerance;
-        }
-        if (std::abs(value_b) <= kScalarTolerance)
-        {
-            value_b = kScalarTolerance;
-        }
+        Scalarm value_a = workspace.plane_grid.values[ax][ay];
+        Scalarm value_b = workspace.plane_grid.values[bx][by];
 
         // 同比例缩放不改变插值比例，避免差值溢出。
         Scalarm scale = std::max(std::abs(value_a), std::abs(value_b));
@@ -427,16 +675,19 @@ namespace meshoffsetting
             static_cast<Scalarm>(world_x),
             static_cast<Scalarm>(world_y),
             zi);
-        std::size_t node_id = _contour_nodes.size();
-        _contour_nodes.push_back(node);
-        _crossing_ids[key] = node_id;
+        std::size_t node_id = workspace.contour_nodes.size();
+        workspace.contour_nodes.push_back(node);
+        workspace.crossing_ids[key] = node_id;
         return node_id;
     }
 
-    void SlicerSDF::Connect(std::size_t a, std::size_t b)
+    void SlicerSDF::Connect(
+        std::size_t a,
+        std::size_t b,
+        LayerWorkspace& workspace) const
     {
-        _contour_nodes[a].neighbours.push_back(b);
-        _contour_nodes[b].neighbours.push_back(a);
+        workspace.contour_nodes[a].neighbours.push_back(b);
+        workspace.contour_nodes[b].neighbours.push_back(a);
     }
 
     bool SlicerSDF::SamePoint(const Point3m& a, const Point3m& b)
@@ -471,13 +722,15 @@ namespace meshoffsetting
         return twice_area != 0;
     }
 
-    void SlicerSDF::TraceContours(SliceResult& result)
+    void SlicerSDF::TraceContours(
+        SliceResult& result,
+        LayerWorkspace& workspace) const
     {
         bool is_error = false;
         // 每个交点必须有两个邻居。
-        for (std::size_t i = 0; i < _contour_nodes.size(); i++)
+        for (std::size_t i = 0; i < workspace.contour_nodes.size(); i++)
         {
-            if (_contour_nodes[i].neighbours.size() != 2)
+            if (workspace.contour_nodes[i].neighbours.size() != 2)
             {
                /* throw std::runtime_error(
                     "Contour is open or branches; "
@@ -488,15 +741,21 @@ namespace meshoffsetting
         }
         if (is_error)
         {
-            for (std::size_t i = 0; i < _contour_nodes.size(); i++)
+            for (std::size_t i = 0; i < workspace.contour_nodes.size(); i++)
             {
-                _error_nodes.push_back(_contour_nodes[i].point);
+                if (workspace.contour_nodes[i].neighbours.size() != 2)
+                {
+                    workspace.error_nodes.push_back(
+                        workspace.contour_nodes[i].point);
+                }
             }
             return;
         }
 
-        std::vector<bool> visited(_contour_nodes.size(), false);
-        for (std::size_t start = 0; start < _contour_nodes.size();start++)
+        std::vector<bool> visited(workspace.contour_nodes.size(), false);
+        for (std::size_t start = 0;
+            start < workspace.contour_nodes.size();
+            start++)
         {
             if (visited[start])
             {
@@ -504,14 +763,14 @@ namespace meshoffsetting
             }
             std::vector<Point3m> contour;
             std::size_t current = start;
-            std::size_t previous = _contour_nodes.size();
+            std::size_t previous = workspace.contour_nodes.size();
             do {
                 if (visited[current])
                 {
                     throw std::runtime_error("Contour traversal failed");
                 }
                 visited[current] = true;
-                const Point3m& point = _contour_nodes[current].point;
+                const Point3m& point = workspace.contour_nodes[current].point;
                 // 零值网格顶点可能让多个交点坐标重合。
                 // 先保留图连接，输出时去掉连续重复坐标。
                 if (contour.empty() ||!SamePoint(contour.back(), point))
@@ -520,7 +779,7 @@ namespace meshoffsetting
                 }
 
                 const std::vector<std::size_t>& neighbours =
-                    _contour_nodes[current].neighbours;
+                    workspace.contour_nodes[current].neighbours;
                 std::size_t next = neighbours[0];
                 if (next == previous)
                 {

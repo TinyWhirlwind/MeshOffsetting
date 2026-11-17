@@ -34,7 +34,7 @@ namespace meshoffsetting
 		BuildNode(_root, 0, fn);
 	}
 
-	ClosestPointResult SSVH::QueryClosestPoint(const Point3m& q)
+	ClosestPointResult SSVH::QueryClosestPoint(const Point3m& q) const
 	{
 		ClosestPointResult result;
 		if (!Empty())
@@ -44,13 +44,9 @@ namespace meshoffsetting
 		return result;
 	}
 
-	void SSVH::QueryNode(int node_index, const Point3m& query_p, ClosestPointResult& result)
+	void SSVH::QueryNode(int node_index, const Point3m& query_p, ClosestPointResult& result) const
 	{
 		const SSVHNode& node = _nodes[node_index];
-		if (DistanceToRSS(query_p, node.bound) >= result.unsigned_distance)
-		{
-			return;
-		}
 		if (node.isLeaf())
 		{
 			for (int i = 0; i < node.faceCount; ++i)
@@ -102,7 +98,7 @@ namespace meshoffsetting
 	}
 
 
-	void SSVH::UpdateClosestPointWithTriangle(int face_index, const Point3m& query_p, ClosestPointResult& result)
+	void SSVH::UpdateClosestPointWithTriangle(int face_index, const Point3m& query_p, ClosestPointResult& result) const
 	{
 		const auto& face = _mesh.face[face_index];
 		const Point3m a = face.P(0);

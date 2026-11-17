@@ -2,6 +2,7 @@
 #include "Tolerance.h"
 #include "NarrowBandSDF.h"
 #include <cmath>
+#include <cstddef>
 namespace meshoffsetting
 {
     NarrowBandSDF::NarrowBandSDF(const CMeshO& mesh, const Scalarm offsetDistance,int nodeCount, int blockWidth) :
@@ -172,7 +173,7 @@ namespace meshoffsetting
                     int sign = CheckSign(closest_point, box_center, is_valid);
                     if (!is_valid)
                     {
-                        SetNodeState(child_min, child_max, GridNodeState::NodeInvalid);
+                        MarkNodeRangeInvalid(child_min, child_max);
                         continue;
                     }
 
@@ -180,7 +181,7 @@ namespace meshoffsetting
                     if (std::abs(signed_distance - _offset_distance) > _cell_width + box_circumsphere_radius)
                     {
                         //设置 Invalid grid nodes
-                        SetNodeState(child_min, child_max, GridNodeState::NodeInvalid);
+                        MarkNodeRangeInvalid(child_min, child_max);
                         continue;
                     }
                     SubdivideBlock(child_min, child_max, depth - 1);
@@ -217,7 +218,7 @@ namespace meshoffsetting
         return true;
     }
 
-    void NarrowBandSDF::SetNodeState(const Point3i& min_node, const Point3i& max_node, GridNodeState state)
+    void NarrowBandSDF::MarkNodeRangeInvalid(const Point3i& min_node, const Point3i& max_node)
     {
         for (int x = min_node.X(); x <= max_node.X(); ++x)
         {
@@ -225,37 +226,39 @@ namespace meshoffsetting
             {
                 for (int z = min_node.Z(); z <= max_node.Z(); ++z)
                 {
-                    Point3i node_id(x, y, z);
-                    GridNode& cur_node = _grid.Node(node_id);
-                    //共享节点只要属于任意一个无效子块，就必须是 NodeInvalid
-                    if (cur_node.state == GridNodeState::Unknown && state == GridNodeState::NodeDistanceReady)
-                    {
-                        Point3m node_pos = _grid.NodePosition(node_id);
-                        ClosestPointResult closest_point = _ssvh.QueryClosestPoint(node_pos);
-                        bool is_valid = true;
-                        int sign = CheckSign(closest_point, node_pos, is_valid);
-                        if (is_valid)
-                        {
-                            cur_node.state = GridNodeState::NodeDistanceReady;
-                            cur_node.signed_distance = sign * closest_point.unsigned_distance;
-                        }
-                        else
-                        {
-                            cur_node.state = GridNodeState::NodeInvalid;
-                        }
-                    }
-                    else if(cur_node.state == GridNodeState::NodeDistanceReady && state == GridNodeState::NodeDistanceReady)
-                    {
-                        continue;
-                    }
-                    else
-                    {
-                        cur_node.state = GridNodeState::NodeInvalid;
-                    }
+                    _grid.Node(Point3i(x, y, z)).state = GridNodeState::NodeInvalid;
                 }
             }
         }
     }
+    void NarrowBandSDF::ComputeRemainingNodeDistances()
+    {
+        const std::ptrdiff_t node_count =
+            static_cast<std::ptrdiff_t>(_grid.NodeCount());
+
+#pragma omp parallel for schedule(guided, 64)
+        for (std::ptrdiff_t index = 0; index < node_count; ++index)
+        {
+            const std::size_t node_index = static_cast<std::size_t>(index);
+            GridNode& cur_node = _grid.Node(node_index);
+            if (cur_node.state == GridNodeState::NodeInvalid)
+                continue;
+
+            Point3m node_pos = _grid.NodePosition(node_index);
+            ClosestPointResult closest_point = _ssvh.QueryClosestPoint(node_pos);
+            bool is_valid = true;
+            int sign = CheckSign(closest_point, node_pos, is_valid);
+            if (!is_valid || !std::isfinite(closest_point.unsigned_distance))
+            {
+                cur_node.state = GridNodeState::NodeInvalid;
+                continue;
+            }
+
+            cur_node.state = GridNodeState::NodeDistanceReady;
+            cur_node.signed_distance = sign * closest_point.unsigned_distance;
+        }
+    }
+
 
     void NarrowBandSDF::Build()
     {
@@ -265,6 +268,7 @@ namespace meshoffsetting
         ApplyBoundingBoxFilter();
         ApplySignedDistanceFilter();
         ApplyOctreeFilter();
+        ComputeRemainingNodeDistances();
     }
 
     void NarrowBandSDF::CreateBlocks()
@@ -302,19 +306,30 @@ namespace meshoffsetting
     void NarrowBandSDF::ApplyBoundingBoxFilter()
     {
         _block_circumsphere_radius = std::sqrt(3.0) * _cell_width * _block_width * 0.5;
-        for (auto& cubic : _blocks)
+        const std::ptrdiff_t block_count = static_cast<std::ptrdiff_t>(_blocks.size());
+
+#pragma omp parallel for schedule(guided, 8)
+        for (std::ptrdiff_t block_index = 0; block_index < block_count; ++block_index)
         {
+            GridBlock& cubic = _blocks[static_cast<std::size_t>(block_index)];
             ClosestPointResult closest_point = _ssvh.QueryClosestPoint(cubic.center);
             //计算block中心点到网格的无符号距离场剔除不在窄带内的block
             if (std::abs(closest_point.unsigned_distance - std::abs(_offset_distance)) > _block_circumsphere_radius + _cell_width)
             {
                 cubic.valid = false;
-                SetNodeState(cubic.min_node, cubic.max_node, GridNodeState::NodeInvalid);
             }
             else
             {
 				cubic.valid = true;
 				cubic.closestPointResult = closest_point;
+            }
+        }
+
+        for (const GridBlock& cubic : _blocks)
+        {
+            if (!cubic.valid)
+            {
+                MarkNodeRangeInvalid(cubic.min_node, cubic.max_node);
             }
         }
     }
@@ -331,7 +346,7 @@ namespace meshoffsetting
             if (!IsBoxValidBySignedDistance(signed_distance, _block_circumsphere_radius))
             {
                 cubic.valid = false;
-                SetNodeState(cubic.min_node, cubic.max_node, GridNodeState::NodeInvalid);
+                MarkNodeRangeInvalid(cubic.min_node, cubic.max_node);
             }
         }
     }
@@ -354,13 +369,7 @@ namespace meshoffsetting
             SubdivideBlock(cubic.min_node, cubic.max_node, depth);
         }
 
-        //设置 valid grid nodes
-        for (const GridBlock& cubic : _blocks)
-        {
-            if (!cubic.valid)
-                continue;
-            SetNodeState(cubic.min_node, cubic.max_node, GridNodeState::NodeDistanceReady);
-        }
+        // Valid node distances are computed once after all filters finish.
     }
 
 }

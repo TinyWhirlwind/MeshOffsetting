@@ -131,3 +131,8 @@ source_group("Third Party" FILES "${VCGLIB_PLY_SOURCE}")
 target_link_libraries(MeshOffset
 	PRIVATE MeshOffsetting::VCGLib
 )
+
+find_package(OpenMP QUIET)
+if(OpenMP_CXX_FOUND)
+	target_link_libraries(MeshOffset PRIVATE OpenMP::OpenMP_CXX)
+endif()

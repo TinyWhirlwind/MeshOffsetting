@@ -38,10 +38,13 @@ namespace meshoffsetting
 		Scalarm GetCellWidth() const;
 		Box3m GetBox() const;
 		GridNode& Node(Point3i node);
-		std::size_t NodeIndex(const Point3i& node);
-		Point3i NodeCoord(std::size_t index);
-		Point3m NodePosition(const Point3i& node);
-		Point3m NodePosition(std::size_t index);
+		GridNode& Node(std::size_t index);
+		const GridNode& Node(std::size_t index) const;
+		std::size_t NodeCount() const;
+		std::size_t NodeIndex(const Point3i& node) const;
+		Point3i NodeCoord(std::size_t index) const;
+		Point3m NodePosition(const Point3i& node) const;
+		Point3m NodePosition(std::size_t index) const;
 		//²âÊÔ½Ó¿Ú
 		std::vector<GridNode> GetNodes();
 	private:

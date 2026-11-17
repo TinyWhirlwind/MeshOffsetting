@@ -36,12 +36,27 @@ namespace meshoffsetting
 		return _nodes[index];
 	}
 
-	std::size_t UniformGrid::NodeIndex(const Point3i& node)
+	GridNode& UniformGrid::Node(std::size_t index)
+	{
+		return _nodes[index];
+	}
+
+	const GridNode& UniformGrid::Node(std::size_t index) const
+	{
+		return _nodes[index];
+	}
+
+	std::size_t UniformGrid::NodeCount() const
+	{
+		return _nodes.size();
+	}
+
+	std::size_t UniformGrid::NodeIndex(const Point3i& node) const
 	{
 		return node.X() + node.Y() * _size.X() + node.Z() * _size.X() * _size.Y();
 	}
 
-	Point3i UniformGrid::NodeCoord(std::size_t index)
+	Point3i UniformGrid::NodeCoord(std::size_t index) const
 	{
 		int x = index % _size.X();
 		int y = (index / _size.X()) % _size.Y();
@@ -49,7 +64,7 @@ namespace meshoffsetting
 		return Point3i(x, y, z);
 	}
 
-	Point3m UniformGrid::NodePosition(const Point3i& node)
+	Point3m UniformGrid::NodePosition(const Point3i& node) const
 	{
 		Point3m pos;
 		pos.X() = _bbox.min.X() + node.X() * _voxel.X();
@@ -58,7 +73,7 @@ namespace meshoffsetting
 		return pos;
 	}
 
-	Point3m UniformGrid::NodePosition(std::size_t index)
+	Point3m UniformGrid::NodePosition(std::size_t index) const
 	{
 		return NodePosition(NodeCoord(index));
 	}

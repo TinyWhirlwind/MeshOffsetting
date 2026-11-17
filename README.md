@@ -22,3 +22,6 @@
 细分剩余 Block ，递归删除更小的无效区域
 
 ![](MeshOffsetting/images/1691c6ba43a3b69d6a6ca2806a360b9ceddff565.png)
+
+切等距符号距离场
+![](MeshOffsetting/images/7da30f1e009e16fc0eb244083bb68bac52d010ab.png)
