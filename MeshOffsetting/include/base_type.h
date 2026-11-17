@@ -16,6 +16,7 @@
 
 typedef MESHLAB_SCALAR Scalarm;
 typedef vcg::Point2<MESHLAB_SCALAR>     Point2m;
+typedef vcg::Point2<int>     Point2i;
 typedef vcg::Point3<MESHLAB_SCALAR>     Point3m;
 typedef vcg::Point3<int>				Point3i;
 typedef vcg::Point4<MESHLAB_SCALAR>     Point4m;

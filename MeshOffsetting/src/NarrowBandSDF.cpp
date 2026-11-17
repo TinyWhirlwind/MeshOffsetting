@@ -1,6 +1,7 @@
 #include "CMeshO.h"
 #include "Tolerance.h"
 #include "NarrowBandSDF.h"
+#include <cmath>
 namespace meshoffsetting
 {
     NarrowBandSDF::NarrowBandSDF(const CMeshO& mesh, const Scalarm offsetDistance,int nodeCount, int blockWidth) :
@@ -9,16 +10,16 @@ namespace meshoffsetting
         _block_width(blockWidth)
     {
         _mesh.updateBoxAndNormals();
-        _ssvh = SSVH(_mesh);
-        _grid = UniformGrid(_mesh.bbox,offsetDistance,blockWidth,nodeCount);
-        _cell_width = _grid.GetCellWidth();
-
         _mesh.vert.EnableVFAdjacency();
         _mesh.face.EnableVFAdjacency();
         _mesh.face.EnableFFAdjacency();
         vcg::tri::UpdateNormal<CMeshO>::PerFaceNormalized(_mesh);
         vcg::tri::UpdateTopology<CMeshO>::VertexFace(_mesh);
         vcg::tri::UpdateTopology<CMeshO>::FaceFace(_mesh);
+
+        _ssvh = SSVH(_mesh);
+        _grid = UniformGrid(_mesh.bbox,offsetDistance,blockWidth,nodeCount);
+        _cell_width = _grid.GetCellWidth();
         Build();
     }
 
@@ -27,9 +28,22 @@ namespace meshoffsetting
         return &_grid;
     }
 
+    bool NarrowBandSDF::QuerySignedDistance(const Point3m& query_point,Scalarm& signed_distance)
+    {
+        ClosestPointResult closest_point = _ssvh.QueryClosestPoint(query_point);
+        bool is_valid = true;
+        int sign = CheckSign(closest_point, query_point, is_valid);
+        if (!is_valid || !std::isfinite(closest_point.unsigned_distance))
+        {
+            return false;
+        }
+        signed_distance = sign * closest_point.unsigned_distance;
+        return true;
+    }
+
     ClosestFeature NarrowBandSDF::ClassifyBarycentric(Scalarm u, Scalarm v)
     {
-        // U:dir(B-A) V:dir(C-A) 
+        // U:dir(B-A) V:dir(C-A)
         // query_p = A + u(B-A) + v(C-A) = (1 - u - v)A + uB + vC = wA + uB + vC
         Scalarm w = 1 - u - v;
         bool zu = std::abs(u) < kScalarTolerance;
@@ -38,7 +52,7 @@ namespace meshoffsetting
         if (zu && zv) return ClosestFeature::VertexA;
         if (zu && zw) return ClosestFeature::VertexC;
         if (zv && zw) return ClosestFeature::VertexB;
-        
+
         if (zu) return ClosestFeature::EdgeCA;
         if (zv) return ClosestFeature::EdgeAB;
         if (zw) return ClosestFeature::EdgeBC;
@@ -61,7 +75,7 @@ namespace meshoffsetting
             if (e1.SquaredNorm() <= kScalarToleranceSquared ||
                 e2.SquaredNorm() <= kScalarToleranceSquared)
             {
-                continue; // ÍË»¯Ãæ
+                continue; // é€€åŒ–é¢
             }
             e1.Normalize();
             e2.Normalize();
@@ -81,7 +95,7 @@ namespace meshoffsetting
         }
         else
         {
-            //±ß½ç±ß
+            //è¾¹ç•Œè¾¹
             normal = f->N();
         }
     }
@@ -95,7 +109,7 @@ namespace meshoffsetting
             return 0;
         }
         //Angle-weighted pseudonormal
-        //¸ù¾İ²éÑ¯µãµ½Íø¸ñµÄ×î½üµã£¬¸ù¾İ×î½üµãµÄÎ»ÖÃ£¨µã¡¢±ß¡¢Ãæ£©£¬²ÉÓÃÈıÖÖ·¨Ïò£¬ÅĞ¶Ï²éÑ¯µãÔÚÄ£ĞÍÄÚ²¿»¹ÊÇÍâ²¿
+        //æ ¹æ®æŸ¥è¯¢ç‚¹åˆ°ç½‘æ ¼çš„æœ€è¿‘ç‚¹ï¼Œæ ¹æ®æœ€è¿‘ç‚¹çš„ä½ç½®ï¼ˆç‚¹ã€è¾¹ã€é¢ï¼‰ï¼Œé‡‡ç”¨ä¸‰ç§æ³•å‘ï¼Œåˆ¤æ–­æŸ¥è¯¢ç‚¹åœ¨æ¨¡å‹å†…éƒ¨è¿˜æ˜¯å¤–éƒ¨
         int sign = 0;
         auto* f = &(_mesh.face[query_result.faceId]);
         Point3m nf(0., 0., 0.);
@@ -152,7 +166,7 @@ namespace meshoffsetting
                         k == 0 ? mid_node.Z() : max_node.Z());
                     Point3m box_center = (_grid.NodePosition(child_min) + _grid.NodePosition(child_max)) / 2;
 
-                    //ÅĞ¶Ïsub_boxµÄ·ûºÅ¾àÀë
+                    //åˆ¤æ–­sub_boxçš„ç¬¦å·è·ç¦»
                     ClosestPointResult closest_point = _ssvh.QueryClosestPoint(box_center);
                     bool is_valid = true;
                     int sign = CheckSign(closest_point, box_center, is_valid);
@@ -165,7 +179,7 @@ namespace meshoffsetting
                     Scalarm signed_distance = sign * closest_point.unsigned_distance;
                     if (std::abs(signed_distance - _offset_distance) > _cell_width + box_circumsphere_radius)
                     {
-                        //ÉèÖÃ Invalid grid nodes
+                        //è®¾ç½® Invalid grid nodes
                         SetNodeState(child_min, child_max, GridNodeState::NodeInvalid);
                         continue;
                     }
@@ -213,7 +227,7 @@ namespace meshoffsetting
                 {
                     Point3i node_id(x, y, z);
                     GridNode& cur_node = _grid.Node(node_id);
-                    //¹²Ïí½ÚµãÖ»ÒªÊôÓÚÈÎÒâÒ»¸öÎŞĞ§×Ó¿é£¬¾Í±ØĞëÊÇ NodeInvalid
+                    //å…±äº«èŠ‚ç‚¹åªè¦å±äºä»»æ„ä¸€ä¸ªæ— æ•ˆå­å—ï¼Œå°±å¿…é¡»æ˜¯ NodeInvalid
                     if (cur_node.state == GridNodeState::Unknown && state == GridNodeState::NodeDistanceReady)
                     {
                         Point3m node_pos = _grid.NodePosition(node_id);
@@ -245,12 +259,12 @@ namespace meshoffsetting
 
     void NarrowBandSDF::Build()
     {
-        if (std::abs(_offset_distance) <= kScalarTolerance)
-            return;
+        /*if (std::abs(_offset_distance) <= kScalarTolerance)
+            return;*/
         CreateBlocks();
         ApplyBoundingBoxFilter();
         ApplySignedDistanceFilter();
-        ApplyOctreeFilter(); 
+        ApplyOctreeFilter();
     }
 
     void NarrowBandSDF::CreateBlocks()
@@ -283,7 +297,7 @@ namespace meshoffsetting
             }
         }
     }
-    
+
     //Bounding Box Filter
     void NarrowBandSDF::ApplyBoundingBoxFilter()
     {
@@ -291,7 +305,7 @@ namespace meshoffsetting
         for (auto& cubic : _blocks)
         {
             ClosestPointResult closest_point = _ssvh.QueryClosestPoint(cubic.center);
-            //¼ÆËãblockÖĞĞÄµãµ½Íø¸ñµÄÎŞ·ûºÅ¾àÀë³¡ÌŞ³ı²»ÔÚÕ­´øÄÚµÄblock
+            //è®¡ç®—blockä¸­å¿ƒç‚¹åˆ°ç½‘æ ¼çš„æ— ç¬¦å·è·ç¦»åœºå‰”é™¤ä¸åœ¨çª„å¸¦å†…çš„block
             if (std::abs(closest_point.unsigned_distance - std::abs(_offset_distance)) > _block_circumsphere_radius + _cell_width)
             {
                 cubic.valid = false;
@@ -312,7 +326,7 @@ namespace meshoffsetting
         {
             if (!cubic.valid)continue;
             int sign = CheckSign(cubic.closestPointResult, cubic.center, cubic.valid);
-            if (!cubic.valid)continue;//²»ÊÇÖØ¸´ÅĞ¶Ï
+            if (!cubic.valid)continue;//ä¸æ˜¯é‡å¤åˆ¤æ–­
 			Scalarm signed_distance = sign * cubic.closestPointResult.unsigned_distance;
             if (!IsBoxValidBySignedDistance(signed_distance, _block_circumsphere_radius))
             {
@@ -336,11 +350,11 @@ namespace meshoffsetting
         {
             if (!cubic.valid)
                 continue;
-			//µİ¹éÏ¸·Ö,ÉèÖÃ Invalid grid nodes
+			//é€’å½’ç»†åˆ†,è®¾ç½® Invalid grid nodes
             SubdivideBlock(cubic.min_node, cubic.max_node, depth);
         }
 
-        //ÉèÖÃ valid grid nodes
+        //è®¾ç½® valid grid nodes
         for (const GridBlock& cubic : _blocks)
         {
             if (!cubic.valid)

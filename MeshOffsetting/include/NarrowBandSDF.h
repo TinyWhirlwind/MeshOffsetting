@@ -40,6 +40,9 @@ namespace meshoffsetting
 
         //²âÊÔ½Ó¿Ú
         UniformGrid* GetGird();
+        bool QuerySignedDistance(
+            const Point3m& query_point,
+            Scalarm& signed_distance);
     private:
         void Build();
 		void CreateBlocks();
@@ -62,7 +65,7 @@ namespace meshoffsetting
         const std::size_t _block_width = 0;
         Scalarm _block_circumsphere_radius = 0;
         std::vector<GridBlock> _blocks;
-        
+
         SSVH _ssvh;
         UniformGrid _grid;
     };

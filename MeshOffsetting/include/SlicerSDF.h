@@ -8,77 +8,80 @@
 #include "NarrowBandSDF.h"
 namespace meshoffsetting
 {
+	struct SliceResult
+	{
+		Scalarm z = 0;
+		std::vector<std::vector<Point3m>> contours;
+		std::size_t skipped_cells = 0;
+	};
+
 	class SlicerSDF
 	{
+	public:
+		SlicerSDF(const CMeshO& mesh, Scalarm offset, int nodeCount = 129, int blockWidth = 8);
+		~SlicerSDF() = default;
+		SlicerSDF(const SlicerSDF&) = delete;
+		SlicerSDF& operator=(const SlicerSDF&) = delete;
+
+		void StartSlicerOne(int layer, Scalarm layer_thickness);
+		void StartSlicerAll(int layer_count, Scalarm layer_thickness);
+
+		SliceResult SliceAtZ(Scalarm zi);
+		const std::vector<SliceResult>& GetLayers() const;
+
+
+		//测试
+		const std::vector<Point3m>& GetErrorNode();
+	private:
 		struct PlaneField
 		{
 			std::vector<std::vector<Scalarm>> values;
 			std::vector<std::vector<bool>> valid;
-			void clear()
-			{
-				for (auto& row : values)
-				{
-					std::fill(row.begin(), row.end(), Scalarm(0));
-				}
-
-				for (auto& row : valid)
-				{
-					std::fill(row.begin(), row.end(), false);
-				}
-			}
-
-			void resize(int size_x, int size_y)
-			{
-				values.assign(
-					size_x,
-					std::vector<Scalarm>(size_y, Scalarm(0)));
-				valid.assign(
-					size_x,
-					std::vector<bool>(size_y, false));
-			}
 		};
 
-		struct ContourPoint
+		// 轮廓交点，不是原来的网格采样节点。
+		struct ContourNode
 		{
-			int begin = -1;
-			int end = -1;
-			Point3m point{0, 0, 0};
-			ContourPoint(int v0, int v1, Point3m p)
-			{
-				begin = std::min(v0, v1);
-				end = std::max(v0, v1);
-				point = p;
-			}
+			Point3m point;
+			std::vector<std::size_t> neighbours;
 		};
 
-		struct ContourSegment
-		{
-			ContourPoint start;
-			ContourPoint end;
-
-			ContourSegment(ContourPoint s, ContourPoint e):
-				start(s), end(e)
-			{
-			}
-		};
-	public:
-		SlicerSDF(const CMeshO& mesh, Scalarm offset);
-		~SlicerSDF() = default;
-
-		void StartSlicerOne(int layer, Scalarm layer_thickness);
-		void StartSlicerAll(int layer_count, Scalarm layer_thickness);
-	private:
-		void ApplySlicer(Scalarm slicer_z);
-		int MarchingSquares(bool n00, bool n10, bool n11, bool n01);
-		int GetCaseId(bool n00, bool n10, bool n11, bool n01);
-		void GetSgementList(int i, int j, Scalarm slicer_z);
+		void BuildPlaneField(Scalarm zi);
+		bool HasStoredNodeInCell(
+			int x,
+			int y,
+			int lower_z,
+			bool needs_upper);
+		bool FillPlaneNode(
+			int x,
+			int y,
+			int lower_z,
+			Scalarm weight,
+			bool needs_upper);
+		void ProcessCell(int x, int y, SliceResult& result);
+		std::size_t GetOrCreateCrossing(int ax, int ay, int bx, int by, Scalarm zi);
+		void Connect(std::size_t a, std::size_t b);
+		void TraceContours(SliceResult& result);
+		static bool SamePoint(const Point3m& a, const Point3m& b);
+		static bool HasArea(const std::vector<Point3m>& contour);
 	private:
 		NarrowBandSDF _nsdf;
-		Scalarm _offset = 0.0;
 		UniformGrid* _grid = nullptr;
+
+		Scalarm _offset = 0.0;
+		Scalarm _cell_width = 0;
 
 		PlaneField _plane_grid;
 		Box3m _bbox;
-		std::vector<ContourSegment> _segments;
+
+		int _size_x = 0;
+		int _size_y = 0;
+		int _size_z = 0;
+		std::vector<ContourNode> _contour_nodes;
+
+		// 网格边两端的顶点 ID -> 轮廓交点 ID。
+		std::map<std::pair<std::size_t, std::size_t>, std::size_t> _crossing_ids;
+		std::vector<SliceResult> _layers;
+		std::vector<Point3m> _error_nodes;
 	};
 }
