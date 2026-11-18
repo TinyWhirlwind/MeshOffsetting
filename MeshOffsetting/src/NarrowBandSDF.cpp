@@ -3,6 +3,7 @@
 #include "NarrowBandSDF.h"
 #include <cmath>
 #include <cstddef>
+#include <stdexcept>
 namespace meshoffsetting
 {
     NarrowBandSDF::NarrowBandSDF(const CMeshO& mesh, const Scalarm offsetDistance,int nodeCount, int blockWidth) :
@@ -10,6 +11,20 @@ namespace meshoffsetting
         _mesh(mesh),
         _block_width(blockWidth)
     {
+        if (nodeCount <= 3)
+        {
+            throw std::invalid_argument("NarrowBandSDF node count must be greater than 3");
+        }
+        if (blockWidth <= 0 ||
+            (blockWidth & (blockWidth - 1)) != 0)
+        {
+            throw std::invalid_argument("NarrowBandSDF block width must be a positive power of two");
+        }
+        if (!std::isfinite(offsetDistance))
+        {
+            throw std::invalid_argument("NarrowBandSDF offset distance must be finite");
+        }
+
         _mesh.updateBoxAndNormals();
         _mesh.vert.EnableVFAdjacency();
         _mesh.face.EnableVFAdjacency();
@@ -18,18 +33,55 @@ namespace meshoffsetting
         vcg::tri::UpdateTopology<CMeshO>::VertexFace(_mesh);
         vcg::tri::UpdateTopology<CMeshO>::FaceFace(_mesh);
 
-        _ssvh = SSVH(_mesh);
+        _ssvh.Initialize(_mesh);
         _grid = UniformGrid(_mesh.bbox,offsetDistance,blockWidth,nodeCount);
         _cell_width = _grid.GetCellWidth();
         Build();
     }
 
-    UniformGrid* NarrowBandSDF::GetGird()
+    Point3i NarrowBandSDF::GetGridSize() const
     {
-        return &_grid;
+        return _grid.GetSize();
     }
 
-    bool NarrowBandSDF::QuerySignedDistance(const Point3m& query_point,Scalarm& signed_distance)
+    Box3m NarrowBandSDF::GetGridBox() const
+    {
+        return _grid.GetBox();
+    }
+
+    Scalarm NarrowBandSDF::GetCellWidth() const
+    {
+        return _grid.GetCellWidth();
+    }
+
+    bool NarrowBandSDF::TryGetNodeDistance(
+        const Point3i& node_id,
+        Scalarm& signed_distance) const
+    {
+        return _grid.TryGetNodeDistance(node_id, signed_distance);
+    }
+
+    bool NarrowBandSDF::EvaluateNodeDistance(
+        const Point3i& node_id,
+        Scalarm& signed_distance) const
+    {
+        if (TryGetNodeDistance(node_id, signed_distance))
+        {
+            return true;
+        }
+
+        if (!_grid.IsInside(node_id))
+        {
+            return false;
+        }
+
+        return QuerySignedDistance(
+            _grid.NodePosition(node_id), signed_distance);
+    }
+
+    bool NarrowBandSDF::QuerySignedDistance(
+        const Point3m& query_point,
+        Scalarm& signed_distance) const
     {
         ClosestPointResult closest_point = _ssvh.QueryClosestPoint(query_point);
         bool is_valid = true;
@@ -42,26 +94,7 @@ namespace meshoffsetting
         return true;
     }
 
-    ClosestFeature NarrowBandSDF::ClassifyBarycentric(Scalarm u, Scalarm v)
-    {
-        // U:dir(B-A) V:dir(C-A)
-        // query_p = A + u(B-A) + v(C-A) = (1 - u - v)A + uB + vC = wA + uB + vC
-        Scalarm w = 1 - u - v;
-        bool zu = std::abs(u) < kScalarTolerance;
-        bool zv = std::abs(v) < kScalarTolerance;
-        bool zw = std::abs(w) < kScalarTolerance;
-        if (zu && zv) return ClosestFeature::VertexA;
-        if (zu && zw) return ClosestFeature::VertexC;
-        if (zv && zw) return ClosestFeature::VertexB;
-
-        if (zu) return ClosestFeature::EdgeCA;
-        if (zv) return ClosestFeature::EdgeAB;
-        if (zw) return ClosestFeature::EdgeBC;
-
-        return ClosestFeature::Face;
-    }
-
-    void NarrowBandSDF::AngleWeightedPseudoNormal(CVertexO* v, Point3m& normal)
+    void NarrowBandSDF::AngleWeightedPseudoNormal(CVertexO* v, Point3m& normal) const
     {
         vcg::face::VFIterator<CMeshO::FaceType> vfi(v);
         for (; !vfi.End(); ++vfi)
@@ -87,7 +120,7 @@ namespace meshoffsetting
         }
     }
 
-    void NarrowBandSDF::AngleWeightedPseudoNormal(CFaceO* f, int edge_id, Point3m& normal)
+    void NarrowBandSDF::AngleWeightedPseudoNormal(CFaceO* f, int edge_id, Point3m& normal) const
     {
         auto nf = f->FFp(edge_id);
         if (nf != f)
@@ -101,10 +134,10 @@ namespace meshoffsetting
         }
     }
 
-    int NarrowBandSDF::CheckSign(ClosestPointResult query_result, Point3m center, bool& is_valid)
+    int NarrowBandSDF::CheckSign(const ClosestPointResult& query_result, const Point3m& center, bool& is_valid) const
     {
         is_valid = true;
-        if (query_result.faceId == -1)
+        if (query_result.faceId < 0)
         {
             is_valid = false;
             return 0;
@@ -112,19 +145,19 @@ namespace meshoffsetting
         //Angle-weighted pseudonormal
         //根据查询点到网格的最近点，根据最近点的位置（点、边、面），采用三种法向，判断查询点在模型内部还是外部
         int sign = 0;
-        auto* f = &(_mesh.face[query_result.faceId]);
+        CFaceO* f = const_cast<CFaceO*>(&(_mesh.face[query_result.faceId]));
         Point3m nf(0., 0., 0.);
-        ClosestFeature type = ClassifyBarycentric(query_result.u, query_result.v);
+        ClosestFeature type = query_result.feature;
         switch (type)
         {
         case ClosestFeature::VertexA:
-            AngleWeightedPseudoNormal(f->V(0), nf);
+            nf = f->V(0)->N();
             break;
         case ClosestFeature::VertexB:
-            AngleWeightedPseudoNormal(f->V(1), nf);
+            nf = f->V(1)->N();
             break;
         case ClosestFeature::VertexC:
-            AngleWeightedPseudoNormal(f->V(2), nf);
+            nf = f->V(2)->N();
             break;
         case ClosestFeature::EdgeAB:
             AngleWeightedPseudoNormal(f, 0, nf);
@@ -138,8 +171,14 @@ namespace meshoffsetting
         case ClosestFeature::Face:
             nf = f->N();
             break;
+        case ClosestFeature::Unknown:
         default:
-            break;
+            is_valid = false;
+            return 0;
+        }
+        if (nf.SquaredNorm() <= kScalarToleranceSquared)
+        {
+            nf = f->N();
         }
         sign = (center - query_result.closest_point) * nf > 0 ? 1 : -1;
         return sign;
@@ -169,11 +208,18 @@ namespace meshoffsetting
 
                     //判断sub_box的符号距离
                     ClosestPointResult closest_point = _ssvh.QueryClosestPoint(box_center);
-                    bool is_valid = true;
-                    int sign = CheckSign(closest_point, box_center, is_valid);
-                    if (!is_valid)
+                    bool query_ok = closest_point.faceId >= 0 && std::isfinite(closest_point.unsigned_distance);
+                    if (!query_ok)
                     {
-                        MarkNodeRangeInvalid(child_min, child_max);
+                        continue;
+                    }
+
+                    bool sign_valid = true;
+                    int sign = CheckSign(closest_point, box_center, sign_valid);
+                    if (!sign_valid)
+                    {
+                        //符号不可信不能删除
+                        //MarkNodeRangeInvalid(child_min, child_max);
                         continue;
                     }
 
@@ -220,65 +266,94 @@ namespace meshoffsetting
 
     void NarrowBandSDF::MarkNodeRangeInvalid(const Point3i& min_node, const Point3i& max_node)
     {
-        for (int x = min_node.X(); x <= max_node.X(); ++x)
+        _grid.DeactivateNodeRange(min_node, max_node);
+    }
+
+    void NarrowBandSDF::InitializeActiveNodes()
+    {
+        _grid.ResetNodes();
+
+        for (const GridBlock& block : _blocks)
         {
-            for (int y = min_node.Y(); y <= max_node.Y(); ++y)
+            if (block.valid)
             {
-                for (int z = min_node.Z(); z <= max_node.Z(); ++z)
-                {
-                    _grid.Node(Point3i(x, y, z)).state = GridNodeState::NodeInvalid;
-                }
+                _grid.ActivateNodeRange(block.min_node, block.max_node);
+            }
+        }
+
+        // Invalid wins for nodes shared by valid and invalid blocks.
+        for (const GridBlock& block : _blocks)
+        {
+            if (!block.valid)
+            {
+                _grid.DeactivateNodeRange(block.min_node, block.max_node);
             }
         }
     }
+
     void NarrowBandSDF::ComputeRemainingNodeDistances()
     {
-        const std::ptrdiff_t node_count =
-            static_cast<std::ptrdiff_t>(_grid.NodeCount());
+        const std::ptrdiff_t brick_count = static_cast<std::ptrdiff_t>(_grid.StoredBrickCount());
 
-#pragma omp parallel for schedule(guided, 64)
-        for (std::ptrdiff_t index = 0; index < node_count; ++index)
+#pragma omp parallel for schedule(guided, 1)
+        for (std::ptrdiff_t brick_index = 0; brick_index < brick_count; ++brick_index)
         {
-            const std::size_t node_index = static_cast<std::size_t>(index);
-            GridNode& cur_node = _grid.Node(node_index);
-            if (cur_node.state == GridNodeState::NodeInvalid)
-                continue;
-
-            Point3m node_pos = _grid.NodePosition(node_index);
-            ClosestPointResult closest_point = _ssvh.QueryClosestPoint(node_pos);
-            bool is_valid = true;
-            int sign = CheckSign(closest_point, node_pos, is_valid);
-            if (!is_valid || !std::isfinite(closest_point.unsigned_distance))
+            for (std::size_t local_index = 0; local_index < UniformGrid::kBrickNodeCount; ++local_index)
             {
-                cur_node.state = GridNodeState::NodeInvalid;
-                continue;
-            }
+                Point3i node_id = _grid.StoredNodeCoord(static_cast<std::size_t>(brick_index), local_index);
+                if (!_grid.IsInside(node_id))
+                {
+                    continue;
+                }
 
-            cur_node.state = GridNodeState::NodeDistanceReady;
-            cur_node.signed_distance = sign * closest_point.unsigned_distance;
+                GridNode& cur_node = _grid.StoredNode(static_cast<std::size_t>(brick_index), local_index);
+                if (cur_node.state != GridNodeState::Unknown)
+                {
+                    continue;
+                }
+
+                Point3m node_pos = _grid.NodePosition(node_id);
+                ClosestPointResult closest_point = _ssvh.QueryClosestPoint(node_pos);
+                bool is_valid = true;
+                int sign = CheckSign(closest_point, node_pos, is_valid);
+                if (!is_valid || !std::isfinite(closest_point.unsigned_distance))
+                {
+                    cur_node.state = GridNodeState::NodeInvalid;
+                    continue;
+                }
+
+                cur_node.state = GridNodeState::NodeDistanceReady;
+                cur_node.signed_distance = sign * closest_point.unsigned_distance;
+            }
         }
     }
 
 
     void NarrowBandSDF::Build()
     {
-        /*if (std::abs(_offset_distance) <= kScalarTolerance)
-            return;*/
         CreateBlocks();
         ApplyBoundingBoxFilter();
         ApplySignedDistanceFilter();
+        InitializeActiveNodes();
         ApplyOctreeFilter();
         ComputeRemainingNodeDistances();
+
+        _blocks.clear();
+        _blocks.shrink_to_fit();
     }
 
     void NarrowBandSDF::CreateBlocks()
     {
-        Point3m size = _grid.GetSize();
+        Point3i size = _grid.GetSize();
 
-        int count_x = std::ceil((size.X() - 1) / _block_width);
-        int count_y = std::ceil((size.Y() - 1) / _block_width);
-        int count_z = std::ceil((size.Z() - 1) / _block_width);
+        int count_x = (size.X() - 1) / static_cast<int>(_block_width);
+        int count_y = (size.Y() - 1) / static_cast<int>(_block_width);
+        int count_z = (size.Z() - 1) / static_cast<int>(_block_width);
         _blocks.clear();
+        _blocks.reserve(
+            static_cast<std::size_t>(count_x) *
+            static_cast<std::size_t>(count_y) *
+            static_cast<std::size_t>(count_z));
         for (int i = 0; i < count_x; ++i)
         {
             for (int j = 0; j < count_y; ++j)
@@ -314,6 +389,12 @@ namespace meshoffsetting
             GridBlock& cubic = _blocks[static_cast<std::size_t>(block_index)];
             ClosestPointResult closest_point = _ssvh.QueryClosestPoint(cubic.center);
             //计算block中心点到网格的无符号距离场剔除不在窄带内的block
+            bool query_ok = closest_point.faceId >= 0 && std::isfinite(closest_point.unsigned_distance);
+            if (!query_ok)
+            {
+                cubic.valid = true;
+                continue;
+            }
             if (std::abs(closest_point.unsigned_distance - std::abs(_offset_distance)) > _block_circumsphere_radius + _cell_width)
             {
                 cubic.valid = false;
@@ -325,13 +406,6 @@ namespace meshoffsetting
             }
         }
 
-        for (const GridBlock& cubic : _blocks)
-        {
-            if (!cubic.valid)
-            {
-                MarkNodeRangeInvalid(cubic.min_node, cubic.max_node);
-            }
-        }
     }
 
     //Signed Distance Filter
@@ -339,14 +413,24 @@ namespace meshoffsetting
     {
         for (auto& cubic : _blocks)
         {
+            if (cubic.closestPointResult.faceId < 0 ||
+                !std::isfinite(cubic.closestPointResult.unsigned_distance))
+            {
+                continue;
+            }
+
             if (!cubic.valid)continue;
-            int sign = CheckSign(cubic.closestPointResult, cubic.center, cubic.valid);
-            if (!cubic.valid)continue;//不是重复判断
+            bool sign_valid = true;
+            int sign = CheckSign(cubic.closestPointResult, cubic.center, sign_valid);
+            if (!sign_valid)
+            {
+                // An uncertain sign cannot safely reject this block.
+                continue;
+            }
 			Scalarm signed_distance = sign * cubic.closestPointResult.unsigned_distance;
             if (!IsBoxValidBySignedDistance(signed_distance, _block_circumsphere_radius))
             {
                 cubic.valid = false;
-                MarkNodeRangeInvalid(cubic.min_node, cubic.max_node);
             }
         }
     }

@@ -7,21 +7,19 @@
 #include <exception>
 #include <stdexcept>
 
+#ifdef _OPENMP
+#include <omp.h>
+#endif
+
 namespace meshoffsetting
 {
     SlicerSDF::SlicerSDF(const CMeshO& mesh, Scalarm offset, int nodeCount, int blockWidth)
         : _nsdf(mesh, offset, nodeCount, blockWidth),
         _offset(offset)
     {
-        _grid = _nsdf.GetGird();
-        if (_grid == nullptr)
-        {
-            throw std::runtime_error("SDF grid is null");
-        }
-
-        _bbox = _grid->GetBox();
-        _cell_width = _grid->GetCellWidth();
-        Point3i size = _grid->GetSize();
+        _bbox = _nsdf.GetGridBox();
+        _cell_width = _nsdf.GetCellWidth();
+        Point3i size = _nsdf.GetGridSize();
         _size_x = size.X();
         _size_y = size.Y();
         _size_z = size.Z();
@@ -39,12 +37,6 @@ namespace meshoffsetting
                 "Invalid cell width or offset");
         }
 
-        const std::size_t node_count =
-            static_cast<std::size_t>(_size_x) *
-            static_cast<std::size_t>(_size_y) *
-            static_cast<std::size_t>(_size_z);
-        _distance_cache.assign(node_count, Scalarm(0));
-        _distance_cached.assign(node_count, false);
     }
 
     void SlicerSDF::StartSlicerOne(int layer, Scalarm layer_thickness)
@@ -91,25 +83,29 @@ namespace meshoffsetting
             return;
         }
 
-        if (!PrepareDistanceCache(slice_z_values))
-        {
-            for (std::size_t i = 0; i < results.size(); ++i)
-            {
-                results[i].z = slice_z_values[i];
-                results[i].skipped_cells =
-                    static_cast<std::size_t>(_size_x - 1) *
-                    static_cast<std::size_t>(_size_y - 1);
-            }
-            _layers.swap(results);
-            return;
-        }
-
         std::vector<std::vector<Point3m>> layer_errors(
             slice_z_values.size());
         std::atomic<bool> failed(false);
         std::exception_ptr first_exception;
 
-#pragma omp parallel
+        const int layer_total =
+            static_cast<int>(slice_z_values.size());
+        int worker_count = 1;
+#ifdef _OPENMP
+        worker_count = std::max(1, omp_get_max_threads());
+#endif
+        const int target_chunk_count = worker_count * 3;
+        const int chunk_size = std::max(
+            4,
+            (layer_total + target_chunk_count - 1) /
+                target_chunk_count);
+        const int chunk_count =
+            (layer_total + chunk_size - 1) / chunk_size;
+        const int active_worker_count = std::max(
+            1,
+            std::min(worker_count, chunk_count));
+
+#pragma omp parallel num_threads(active_worker_count)
         {
             LayerWorkspace workspace;
             bool workspace_ready = true;
@@ -130,32 +126,44 @@ namespace meshoffsetting
                 workspace_ready = false;
             }
 
-#pragma omp for schedule(dynamic)
-            for (int layer = 0;
-                 layer < static_cast<int>(slice_z_values.size());
-                 ++layer)
+#pragma omp for schedule(dynamic, 1)
+            for (int chunk = 0; chunk < chunk_count; ++chunk)
             {
                 if (!workspace_ready || failed.load())
                 {
                     continue;
                 }
 
-                try
+                const int begin = chunk * chunk_size;
+                const int end = std::min(
+                    begin + chunk_size,
+                    layer_total);
+
+                for (int layer = begin; layer < end; ++layer)
                 {
-                    results[layer] = SliceAtZImpl(
-                        slice_z_values[layer], workspace);
-                    layer_errors[layer] = workspace.error_nodes;
-                }
-                catch (...)
-                {
-#pragma omp critical(SlicerSDFException)
+                    if (failed.load())
                     {
-                        if (!first_exception)
-                        {
-                            first_exception = std::current_exception();
-                        }
+                        break;
                     }
-                    failed.store(true);
+
+                    try
+                    {
+                        results[layer] = SliceAtZImpl(
+                            slice_z_values[layer], workspace);
+                        layer_errors[layer] = workspace.error_nodes;
+                    }
+                    catch (...)
+                    {
+#pragma omp critical(SlicerSDFException)
+                        {
+                            if (!first_exception)
+                            {
+                                first_exception = std::current_exception();
+                            }
+                        }
+                        failed.store(true);
+                        break;
+                    }
                 }
             }
         }
@@ -185,21 +193,9 @@ namespace meshoffsetting
     SliceResult SlicerSDF::SliceAtZ(Scalarm zi)
     {
         //_error_nodes.clear();
-        SliceResult result;
-        result.z = zi;
-
-        std::vector<Scalarm> slice_z_values(1, zi);
-        if (!PrepareDistanceCache(slice_z_values))
-        {
-            result.skipped_cells =
-                static_cast<std::size_t>(_size_x - 1) *
-                static_cast<std::size_t>(_size_y - 1);
-            return result;
-        }
-
         LayerWorkspace workspace;
         InitializeWorkspace(workspace);
-        result = SliceAtZImpl(zi, workspace);
+        SliceResult result = SliceAtZImpl(zi, workspace);
         //_error_nodes = workspace.error_nodes;
         return result;
     }
@@ -213,6 +209,21 @@ namespace meshoffsetting
         workspace.plane_grid.valid.assign(
             _size_x,
             std::vector<bool>(_size_y, false));
+        workspace.plane_grid.candidate_cells.assign(
+            _size_x - 1,
+            std::vector<bool>(_size_y - 1, false));
+
+        const std::size_t plane_node_count =
+            static_cast<std::size_t>(_size_x) *
+            static_cast<std::size_t>(_size_y);
+        workspace.lower_plane.values.assign(
+            plane_node_count, Scalarm(0));
+        workspace.lower_plane.states.assign(
+            plane_node_count, PlaneNodeState::Missing);
+        workspace.upper_plane.values.assign(
+            plane_node_count, Scalarm(0));
+        workspace.upper_plane.states.assign(
+            plane_node_count, PlaneNodeState::Missing);
 
         const std::size_t edge_count =
             static_cast<std::size_t>(_size_x - 1) * _size_y +
@@ -241,101 +252,167 @@ namespace meshoffsetting
         return !needs_upper || lower_z + 1 < _size_z;
     }
 
-    bool SlicerSDF::PrepareDistanceCache(
-        const std::vector<Scalarm>& slice_z_values)
+    std::size_t SlicerSDF::PlaneIndex(int x, int y) const
     {
-        const std::size_t node_count =
-            static_cast<std::size_t>(_size_x) *
-            static_cast<std::size_t>(_size_y) *
-            static_cast<std::size_t>(_size_z);
-        std::vector<unsigned char> needed_nodes(node_count, 0);
+        return static_cast<std::size_t>(x) *
+            static_cast<std::size_t>(_size_y) +
+            static_cast<std::size_t>(y);
+    }
 
-        for (Scalarm zi : slice_z_values)
+    bool SlicerSDF::LoadDistancePlane(
+        int z,
+        DistancePlane& plane) const
+    {
+        if (z < 0 || z >= _size_z)
         {
-            int lower_z = 0;
-            Scalarm weight = 0;
-            bool needs_upper = false;
-            if (!ComputeSlicePosition(
-                zi, lower_z, weight, needs_upper))
-            {
-                return false;
-            }
+            return false;
+        }
 
-            for (int x = 0; x + 1 < _size_x; x++)
+        const std::size_t plane_node_count =
+            static_cast<std::size_t>(_size_x) *
+            static_cast<std::size_t>(_size_y);
+        if (plane.values.size() != plane_node_count)
+        {
+            plane.values.assign(plane_node_count, Scalarm(0));
+            plane.states.assign(
+                plane_node_count,
+                PlaneNodeState::Missing);
+        }
+
+        plane.z = z;
+        for (int x = 0; x < _size_x; ++x)
+        {
+            for (int y = 0; y < _size_y; ++y)
             {
-                for (int y = 0; y + 1 < _size_y; y++)
+                const std::size_t index = PlaneIndex(x, y);
+                Scalarm distance = 0;
+                if (_nsdf.TryGetNodeDistance(
+                        Point3i(x, y, z), distance) &&
+                    std::isfinite(distance))
                 {
-                    bool candidate_cell = false;
-                    for (int dx = 0; dx <= 1; dx++)
-                    {
-                        for (int dy = 0; dy <= 1; dy++)
-                        {
-                            GridNode& lower = _grid->Node(
-                                Point3i(x + dx, y + dy, lower_z));
-                            if (lower.state == GridNodeState::NodeDistanceReady)
-                            {
-                                candidate_cell = true;
-                            }
-
-                            if (needs_upper)
-                            {
-                                GridNode& upper = _grid->Node(
-                                    Point3i(x + dx, y + dy, lower_z + 1));
-                                if (upper.state == GridNodeState::NodeDistanceReady)
-                                {
-                                    candidate_cell = true;
-                                }
-                            }
-                        }
-                    }
-
-                    if (!candidate_cell)
-                    {
-                        continue;
-                    }
-
-                    for (int dx = 0; dx <= 1; dx++)
-                    {
-                        for (int dy = 0; dy <= 1; dy++)
-                        {
-                            Point3i lower_id(x + dx, y + dy, lower_z);
-                            needed_nodes[_grid->NodeIndex(lower_id)] = 1;
-
-                            if (needs_upper)
-                            {
-                                Point3i upper_id(
-                                    x + dx, y + dy, lower_z + 1);
-                                needed_nodes[_grid->NodeIndex(upper_id)] = 1;
-                            }
-                        }
-                    }
+                    plane.values[index] = distance;
+                    plane.states[index] =
+                        PlaneNodeState::NarrowBand;
+                }
+                else
+                {
+                    plane.values[index] = Scalarm(0);
+                    plane.states[index] =
+                        PlaneNodeState::Missing;
                 }
             }
         }
 
-        std::vector<std::size_t> node_indices;
-        for (std::size_t index = 0; index < needed_nodes.size(); index++)
+        return true;
+    }
+
+    bool SlicerSDF::PrepareDistancePlanes(
+        int lower_z,
+        bool needs_upper,
+        LayerWorkspace& workspace) const
+    {
+        if (lower_z < 0 || lower_z >= _size_z)
         {
-            if (needed_nodes[index])
+            return false;
+        }
+
+        if (workspace.lower_plane.z != lower_z)
+        {
+            if (workspace.upper_plane.z == lower_z)
             {
-                node_indices.push_back(index);
+                std::swap(
+                    workspace.lower_plane,
+                    workspace.upper_plane);
+            }
+            else if (!LoadDistancePlane(
+                         lower_z,
+                         workspace.lower_plane))
+            {
+                return false;
             }
         }
 
-        const std::ptrdiff_t task_count =
-            static_cast<std::ptrdiff_t>(node_indices.size());
-#pragma omp parallel for schedule(guided, 64)
-        for (std::ptrdiff_t task = 0; task < task_count; ++task)
+        if (!needs_upper)
         {
-            const std::size_t index =
-                node_indices[static_cast<std::size_t>(task)];
-            Point3i node = _grid->NodeCoord(index);
-
-            Scalarm distance = 0;
-            GetGridNodeDistance(
-                node.X(), node.Y(), node.Z(), distance);
+            return true;
         }
 
+        const int upper_z = lower_z + 1;
+        if (upper_z >= _size_z)
+        {
+            return false;
+        }
+
+        if (workspace.upper_plane.z != upper_z &&
+            !LoadDistancePlane(
+                upper_z,
+                workspace.upper_plane))
+        {
+            return false;
+        }
+
+        return true;
+    }
+
+    bool SlicerSDF::IsCandidateCell(
+        int x,
+        int y,
+        bool needs_upper,
+        const LayerWorkspace& workspace) const
+    {
+        for (int dx = 0; dx <= 1; ++dx)
+        {
+            for (int dy = 0; dy <= 1; ++dy)
+            {
+                const std::size_t index =
+                    PlaneIndex(x + dx, y + dy);
+                if (workspace.lower_plane.states[index] ==
+                    PlaneNodeState::NarrowBand)
+                {
+                    return true;
+                }
+
+                if (needs_upper &&
+                    workspace.upper_plane.states[index] ==
+                    PlaneNodeState::NarrowBand)
+                {
+                    return true;
+                }
+            }
+        }
+
+        return false;
+    }
+
+    bool SlicerSDF::EnsurePlaneNodeDistance(
+        int x,
+        int y,
+        DistancePlane& plane) const
+    {
+        const std::size_t index = PlaneIndex(x, y);
+        const PlaneNodeState state = plane.states[index];
+        if (state == PlaneNodeState::NarrowBand ||
+            state == PlaneNodeState::Support)
+        {
+            return true;
+        }
+
+        if (state == PlaneNodeState::Failed)
+        {
+            return false;
+        }
+
+        Scalarm distance = 0;
+        if (!_nsdf.EvaluateNodeDistance(
+                Point3i(x, y, plane.z), distance) ||
+            !std::isfinite(distance))
+        {
+            plane.states[index] = PlaneNodeState::Failed;
+            return false;
+        }
+
+        plane.values[index] = distance;
+        plane.states[index] = PlaneNodeState::Support;
         return true;
     }
 
@@ -381,6 +458,14 @@ namespace meshoffsetting
             }
         }
 
+        for (int x = 0; x + 1 < _size_x; ++x)
+        {
+            std::fill(
+                workspace.plane_grid.candidate_cells[x].begin(),
+                workspace.plane_grid.candidate_cells[x].end(),
+                false);
+        }
+
         int lower_z = 0;
         Scalarm weight = 0;
         bool needs_upper = false;
@@ -390,73 +475,67 @@ namespace meshoffsetting
             return false;
         }
 
+        if (!PrepareDistancePlanes(
+                lower_z, needs_upper, workspace))
+        {
+            return false;
+        }
+
+        for (int x = 0; x + 1 < _size_x; ++x)
+        {
+            for (int y = 0; y + 1 < _size_y; ++y)
+            {
+                workspace.plane_grid.candidate_cells[x][y] =
+                    IsCandidateCell(
+                        x, y, needs_upper, workspace);
+            }
+        }
+
+        for (int x = 0; x + 1 < _size_x; ++x)
+        {
+            for (int y = 0; y + 1 < _size_y; ++y)
+            {
+                if (!workspace.plane_grid.candidate_cells[x][y])
+                {
+                    continue;
+                }
+
+                for (int dx = 0; dx <= 1; ++dx)
+                {
+                    for (int dy = 0; dy <= 1; ++dy)
+                    {
+                        EnsurePlaneNodeDistance(
+                            x + dx,
+                            y + dy,
+                            workspace.lower_plane);
+
+                        if (needs_upper)
+                        {
+                            EnsurePlaneNodeDistance(
+                                x + dx,
+                                y + dy,
+                                workspace.upper_plane);
+                        }
+                    }
+                }
+            }
+        }
+
         for (int x = 0; x < _size_x; x++)
         {
             for (int y = 0; y < _size_y; y++)
             {
                 FillPlaneNode(
-                    x, y, lower_z, weight, needs_upper, workspace);
+                    x, y, weight, needs_upper, workspace);
             }
         }
 
         return true;
     }
 
-    bool SlicerSDF::GetGridNodeDistance(
-        int x,
-        int y,
-        int z,
-        Scalarm& distance)
-    {
-        Point3i node_id(x, y, z);
-        const std::size_t index = _grid->NodeIndex(node_id);
-        if (_distance_cached[index])
-        {
-            distance = _distance_cache[index];
-            return true;
-        }
-
-        GridNode& node = _grid->Node(node_id);
-        if (node.state == GridNodeState::NodeDistanceReady &&
-            std::isfinite(node.signed_distance))
-        {
-            distance = node.signed_distance;
-        }
-        else if (!_nsdf.QuerySignedDistance(
-                     _grid->NodePosition(node_id), distance) ||
-                 !std::isfinite(distance))
-        {
-            return false;
-        }
-
-        _distance_cache[index] = distance;
-        _distance_cached[index] = true;
-        return true;
-    }
-
-    bool SlicerSDF::GetCachedGridNodeDistance(
-        int x,
-        int y,
-        int z,
-        Scalarm& distance) const
-    {
-        const std::size_t index =
-            static_cast<std::size_t>(x) +
-            static_cast<std::size_t>(y) * _size_x +
-            static_cast<std::size_t>(z) * _size_x * _size_y;
-        if (!_distance_cached[index])
-        {
-            return false;
-        }
-
-        distance = _distance_cache[index];
-        return std::isfinite(distance);
-    }
-
     bool SlicerSDF::FillPlaneNode(
         int x,
         int y,
-        int lower_z,
         Scalarm weight,
         bool needs_upper,
         LayerWorkspace& workspace) const
@@ -466,23 +545,30 @@ namespace meshoffsetting
             return true;
         }
 
-        Scalarm lower_distance = 0;
-        if (!GetCachedGridNodeDistance(
-            x, y, lower_z, lower_distance))
+        const std::size_t index = PlaneIndex(x, y);
+        PlaneNodeState lower_state =
+            workspace.lower_plane.states[index];
+        if (lower_state != PlaneNodeState::NarrowBand &&
+            lower_state != PlaneNodeState::Support)
         {
             return false;
         }
 
+        Scalarm lower_distance =
+            workspace.lower_plane.values[index];
         Scalarm distance = lower_distance;
         if (needs_upper)
         {
-            Scalarm upper_distance = 0;
-            if (!GetCachedGridNodeDistance(
-                x, y, lower_z + 1, upper_distance))
+            PlaneNodeState upper_state =
+                workspace.upper_plane.states[index];
+            if (upper_state != PlaneNodeState::NarrowBand &&
+                upper_state != PlaneNodeState::Support)
             {
                 return false;
             }
 
+            Scalarm upper_distance =
+                workspace.upper_plane.values[index];
             distance = lower_distance * (Scalarm(1) - weight)
                 + upper_distance * weight;
         }

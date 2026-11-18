@@ -5,6 +5,9 @@
  * @brief
  *
  */
+#ifndef MESHOFFSETTING_SLICER_SDF_H
+#define MESHOFFSETTING_SLICER_SDF_H
+
 #include "NarrowBandSDF.h"
 namespace meshoffsetting
 {
@@ -37,6 +40,22 @@ namespace meshoffsetting
 		{
 			std::vector<std::vector<Scalarm>> values;
 			std::vector<std::vector<bool>> valid;
+			std::vector<std::vector<bool>> candidate_cells;
+		};
+
+		enum class PlaneNodeState : unsigned char
+		{
+			Missing,
+			NarrowBand,
+			Support,
+			Failed
+		};
+
+		struct DistancePlane
+		{
+			int z = -1;
+			std::vector<Scalarm> values;
+			std::vector<PlaneNodeState> states;
 		};
 
 		// 轮廓交点，不是原来的网格采样节点。
@@ -48,6 +67,8 @@ namespace meshoffsetting
 
 		struct LayerWorkspace
 		{
+			DistancePlane lower_plane;
+			DistancePlane upper_plane;
 			PlaneField plane_grid;
 			std::vector<ContourNode> contour_nodes;
 			// 网格边两端的顶点 ID -> 轮廓交点 ID。
@@ -61,23 +82,26 @@ namespace meshoffsetting
 			int& lower_z,
 			Scalarm& weight,
 			bool& needs_upper) const;
-		bool PrepareDistanceCache(const std::vector<Scalarm>& slice_z_values);
-		bool GetGridNodeDistance(
+		bool LoadDistancePlane(int z, DistancePlane& plane) const;
+		bool PrepareDistancePlanes(
+			int lower_z,
+			bool needs_upper,
+			LayerWorkspace& workspace) const;
+		bool IsCandidateCell(
 			int x,
 			int y,
-			int z,
-			Scalarm& distance);
-		bool GetCachedGridNodeDistance(
+			bool needs_upper,
+			const LayerWorkspace& workspace) const;
+		bool EnsurePlaneNodeDistance(
 			int x,
 			int y,
-			int z,
-			Scalarm& distance) const;
+			DistancePlane& plane) const;
+		std::size_t PlaneIndex(int x, int y) const;
 		SliceResult SliceAtZImpl(Scalarm zi, LayerWorkspace& workspace) const;
 		bool BuildPlaneField(Scalarm zi, LayerWorkspace& workspace) const;
 		bool FillPlaneNode(
 			int x,
 			int y,
-			int lower_z,
 			Scalarm weight,
 			bool needs_upper,
 			LayerWorkspace& workspace) const;
@@ -95,13 +119,10 @@ namespace meshoffsetting
 		static bool HasArea(const std::vector<Point3m>& contour);
 	private:
 		NarrowBandSDF _nsdf;
-		UniformGrid* _grid = nullptr;
 
 		Scalarm _offset = 0.0;
 		Scalarm _cell_width = 0;
 
-		std::vector<Scalarm> _distance_cache;
-		std::vector<unsigned char> _distance_cached;
 		Box3m _bbox;
 
 		int _size_x = 0;
@@ -111,3 +132,5 @@ namespace meshoffsetting
 		//std::vector<Point3m> _error_nodes;
 	};
 }
+
+#endif

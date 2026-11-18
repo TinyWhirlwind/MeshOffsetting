@@ -5,8 +5,13 @@
 namespace meshoffsetting
 {
 	SSVH::SSVH(const CMeshO& mesh)
-		:_mesh(mesh)
 	{
+		Initialize(mesh);
+	}
+
+	void SSVH::Initialize(const CMeshO& mesh)
+	{
+		_mesh = &mesh;
 		Build();
 	}
 
@@ -14,24 +19,38 @@ namespace meshoffsetting
 	{
 		_nodes.clear();
 		_faceIndices.clear();
-		_faceIndices.reserve(_mesh.face.size());
-		for (int i = 0; i < _mesh.fn; ++i)
-		{
-			if (_mesh.face[i].IsD())
-				continue;
-			_faceIndices.push_back(i);
+		_triangles.clear();
+		_root = -1;
 
-		}
-		if (_faceIndices.empty())
+		if (_mesh == nullptr)
 		{
-			_root = -1;
 			return;
 		}
-		int fn = _faceIndices.size();
-		_nodes.reserve(fn * 2 - 1);
+		_faceIndices.reserve(_mesh->face.size());
+		_triangles.resize(_mesh->face.size());
+
+		for (std::size_t face_id = 0; face_id < _mesh->face.size(); ++face_id)
+		{
+			const CFaceO& face = _mesh->face[face_id];
+			if (face.IsD())
+				continue;
+			_faceIndices.push_back(static_cast<int>(face_id));
+
+			CachedTriangle& triangle = _triangles[face_id];
+			triangle.a = face.P(0);
+			triangle.ab = face.P(1) - triangle.a;
+			triangle.ac = face.P(2) - triangle.a;
+		}
+
+		if (_faceIndices.empty())
+		{
+			return;
+		}
+		std::size_t faceCount = _faceIndices.size();
+		_nodes.reserve(faceCount * 2 - 1);
 		_nodes.emplace_back();
 		_root = 0;
-		BuildNode(_root, 0, fn);
+		BuildNode(_root, 0, faceCount);
 	}
 
 	ClosestPointResult SSVH::QueryClosestPoint(const Point3m& q) const
@@ -61,29 +80,53 @@ namespace meshoffsetting
 
 		int left_child = node.firstChild;
 		int right_child = node.firstChild + 1;
-		Scalarm left_dis = DistanceToRSS(query_p, _nodes[left_child].bound);
-		Scalarm right_dis = DistanceToRSS(query_p, _nodes[right_child].bound);
-		if (left_dis > right_dis)
+		Scalarm left_core_squared = DistanceToRSSCoreSquared(query_p, _nodes[left_child].bound);
+		Scalarm right_core_squared = DistanceToRSSCoreSquared(query_p, _nodes[right_child].bound);
+		if (left_core_squared > right_core_squared)
 		{
 			std::swap(left_child, right_child);
-			std::swap(left_dis, right_dis);
+			std::swap(left_core_squared, right_core_squared);
 		}
 
-		if (left_dis < result.unsigned_distance)
+		if (result.faceId < 0)
+		{
 			QueryNode(left_child, query_p, result);
-		if (right_dis < result.unsigned_distance)
+		}
+		else
+		{
+			Scalarm limit = result.unsigned_distance + _nodes[left_child].bound.sweep_radius;
+			if (left_core_squared <= limit * limit)
+			{
+				QueryNode(left_child, query_p, result);
+			}
+		}
+
+		// 左子树查询后，result 可能已经更新，所以这里必须重新计算右子树的 limit。
+		if (result.faceId < 0)
+		{
 			QueryNode(right_child, query_p, result);
+		}
+		else
+		{
+			Scalarm limit =result.unsigned_distance + _nodes[right_child].bound.sweep_radius;
+			if (right_core_squared <= limit * limit)
+			{
+				QueryNode(right_child, query_p, result);
+			}
+		}
 	}
 
-	Scalarm SSVH::DistanceToRSS(const Point3m& query_p, const RSS& bound) const
+	Scalarm SSVH::DistanceToRSSCoreSquared(const Point3m& query_p,const RSS& bound) const
 	{
 		Point3m delta = query_p - bound.origin;
+
 		Scalarm u = delta * bound.axisU;
 		Scalarm v = delta * bound.axisV;
 		Scalarm n = delta * bound.axisN;
 
-		Scalarm du = 0.0;
-		Scalarm dv = 0.0;
+		Scalarm du = 0;
+		Scalarm dv = 0;
+
 		if (u < 0)
 			du = -u;
 		else if (u > bound.lengthU)
@@ -93,48 +136,43 @@ namespace meshoffsetting
 			dv = -v;
 		else if (v > bound.lengthV)
 			dv = v - bound.lengthV;
-		Scalarm rectangleDistance = std::sqrt(du * du + dv * dv + n * n);
-		return std::max(Scalarm(0), rectangleDistance - bound.sweep_radius);
+
+		return du * du + dv * dv + n * n;
 	}
 
 
 	void SSVH::UpdateClosestPointWithTriangle(int face_index, const Point3m& query_p, ClosestPointResult& result) const
 	{
-		const auto& face = _mesh.face[face_index];
-		const Point3m a = face.P(0);
-		const Point3m b = face.P(1);
-		const Point3m c = face.P(2);
+		const CachedTriangle& triangle = _triangles[face_index];
+		const Point3m& a = triangle.a;
+		const Point3m& ab = triangle.ab;
+		const Point3m& ac = triangle.ac;
+		const Point3m b = a + ab;
+		const Point3m c = a + ac;
 
-		auto setResult = [&](Scalarm s, Scalarm t)
+		auto setResult = [&](Scalarm s, Scalarm t, ClosestFeature feature)
 			{
-				Point3m closest_point =
-					a + (b - a) * s + (c - a) * t;
-
+				Point3m closest_point = a + ab * s + ac * t;
 				Point3m diff = query_p - closest_point;
-				Scalarm distance = std::sqrt(diff * diff);
+				Scalarm distance_squared = diff * diff;
 
-				if (distance < result.unsigned_distance)
+				if (distance_squared < result.unsigned_distance_squared)
 				{
-					result.found = true;
-					result.u = s;
-					result.v = t;
+					result.feature = feature;
 					result.faceId = face_index;
 					result.closest_point = closest_point;
-					result.unsigned_distance = distance;
+					result.unsigned_distance_squared = distance_squared;
+					result.unsigned_distance = std::sqrt(distance_squared);
 				}
 			};
 
-		const Point3m ab = b - a;
-		const Point3m ac = c - a;
 		const Point3m ap = query_p - a;
 
 		const Scalarm d1 = ab * ap;
 		const Scalarm d2 = ac * ap;
 		if (d1 <= 0 && d2 <= 0)
 		{
-			setResult(0, 0);
-			//result.closestType = ClosestType::Vertex;
-			//result.closestFeature = 0; // A
+			setResult(0, 0, ClosestFeature::VertexA);
 			return;
 		}
 
@@ -143,9 +181,7 @@ namespace meshoffsetting
 		const Scalarm d4 = ac * bp;
 		if (d3 >= 0 && d4 <= d3)
 		{
-			setResult(1, 0);
-			//result.closestType = ClosestType::Vertex;
-			//result.closestFeature = 1; // B
+			setResult(1, 0, ClosestFeature::VertexB);
 			return;
 		}
 
@@ -153,10 +189,14 @@ namespace meshoffsetting
 		if (vc <= 0 && d1 >= 0 && d3 <= 0)
 		{
 			const Scalarm denom = d1 - d3;
-			const Scalarm v = denom > kScalarTolerance ? d1 / denom : 0;
-			setResult(v, 0);
-			//result.closestType = ClosestType::Edge;
-			//result.closestFeature = 0; // AB
+			Scalarm v = denom > kScalarTolerance ? d1 / denom : 0;
+			v = std::clamp(v, Scalarm(0), Scalarm(1));
+			ClosestFeature feature = ClosestFeature::EdgeAB;
+			if (v == Scalarm(0))
+				feature = ClosestFeature::VertexA;
+			else if (v == Scalarm(1))
+				feature = ClosestFeature::VertexB;
+			setResult(v, 0, feature);
 			return ;
 		}
 
@@ -165,9 +205,7 @@ namespace meshoffsetting
 		const Scalarm d6 = ac * cp;
 		if (d6 >= 0 && d5 <= d6)
 		{
-			setResult(0, 1);
-			//result.closestType = ClosestType::Vertex;
-			//result.closestFeature = 2; // C
+			setResult(0, 1, ClosestFeature::VertexC);
 			return;
 		}
 
@@ -175,10 +213,14 @@ namespace meshoffsetting
 		if (vb <= 0 && d2 >= 0 && d6 <= 0)
 		{
 			const Scalarm denom = d2 - d6;
-			const Scalarm w = denom > kScalarTolerance ? d2 / denom : 0;
-			setResult(0, w);
-			//result.closestType = ClosestType::Edge;
-			//result.closestFeature = 2; // AC
+			Scalarm w = denom > kScalarTolerance ? d2 / denom : 0;
+			w = std::clamp(w, Scalarm(0), Scalarm(1));
+			ClosestFeature feature = ClosestFeature::EdgeCA;
+			if (w == Scalarm(0))
+				feature = ClosestFeature::VertexA;
+			else if (w == Scalarm(1))
+				feature = ClosestFeature::VertexC;
+			setResult(0, w, feature);
 			return;
 		}
 
@@ -186,10 +228,14 @@ namespace meshoffsetting
 		if (va <= 0 && (d4 - d3) >= 0 && (d5 - d6) >= 0)
 		{
 			const Scalarm denom = (d4 - d3) + (d5 - d6);
-			const Scalarm w = denom > kScalarTolerance ? (d4 - d3) / denom : 0;
-			setResult(1 - w, w);
-			//result.closestType = ClosestType::Edge;
-			//result.closestFeature = 1; // BC
+			Scalarm w = denom > kScalarTolerance ? (d4 - d3) / denom : 0;
+			w = std::clamp(w, Scalarm(0), Scalarm(1));
+			ClosestFeature feature = ClosestFeature::EdgeBC;
+			if (w == Scalarm(0))
+				feature = ClosestFeature::VertexB;
+			else if (w == Scalarm(1))
+				feature = ClosestFeature::VertexC;
+			setResult(1 - w, w, feature);
 			return;
 		}
 
@@ -198,13 +244,15 @@ namespace meshoffsetting
 		{
 			const Scalarm v = vb / denom;
 			const Scalarm w = vc / denom;
-			setResult(v, w);
-			//result.closestType = ClosestType::Face;
-			//result.closestFeature = 0;
+			setResult(v, w, ClosestFeature::Face);
 		}
 		else
 		{
-			auto setSegmentResult = [&](const Point3m& p0, const Point3m& p1, Scalarm s0, Scalarm t0, Scalarm s1, Scalarm t1)
+			auto setSegmentResult = [&](const Point3m& p0,
+				const Point3m& p1,
+				ClosestFeature start_feature,
+				ClosestFeature end_feature,
+				ClosestFeature edge_feature)
 				{
 					const Point3m edge = p1 - p0;
 					const Scalarm len2 = edge * edge;
@@ -213,23 +261,41 @@ namespace meshoffsetting
 
 					ClosestPointResult candidate{};
 					candidate.faceId = face_index;
-					//candidate._sign = 0;
-					//candidate.intersected = false;
-					candidate.u = s0 + (s1 - s0) * u;
-					candidate.v = t0 + (t1 - t0) * u;
+					if (u == Scalarm(0))
+					{
+						candidate.feature = start_feature;
+					}
+					else if (u == Scalarm(1))
+					{
+						candidate.feature = end_feature;
+					}
+					else
+					{
+						candidate.feature = edge_feature;
+					}
 					candidate.closest_point = p0 + edge * u;
 					const Point3m diff = query_p - candidate.closest_point;
-					candidate.unsigned_distance = std::sqrt(diff * diff);
-					//candidate.intersected = candidate.unsigned_distance <= kScalarTolerance;
-					if (candidate.unsigned_distance < result.unsigned_distance)
+					const Scalarm distance_squared = diff * diff;
+					if (distance_squared < result.unsigned_distance_squared)
 					{
+						candidate.unsigned_distance_squared = distance_squared;
+						candidate.unsigned_distance = std::sqrt(distance_squared);
 						result = candidate;
 					}
 				};
 
-			setSegmentResult(a, b, 0, 0, 1, 0);
-			setSegmentResult(a, c, 0, 0, 0, 1);
-			setSegmentResult(b, c, 1, 0, 0, 1);
+			setSegmentResult(a, b,
+				ClosestFeature::VertexA,
+				ClosestFeature::VertexB,
+				ClosestFeature::EdgeAB);
+			setSegmentResult(a, c,
+				ClosestFeature::VertexA,
+				ClosestFeature::VertexC,
+				ClosestFeature::EdgeCA);
+			setSegmentResult(b, c,
+				ClosestFeature::VertexB,
+				ClosestFeature::VertexC,
+				ClosestFeature::EdgeBC);
 		}
 	}
 
@@ -257,12 +323,14 @@ namespace meshoffsetting
 		auto middle = std::partition(first, last,
 			[&](int id)
 			{
-				Point3m center = FaceCentroid(id);
+				const CachedTriangle& triangle = _triangles[id];
+				const Point3m center = triangle.a +
+					(triangle.ab + triangle.ac) / Scalarm(3);
 				return (center - mean) * splitAxis <= 0;
 			});
 		std::size_t mid = middle - _faceIndices.begin();
 
-		// ���������ζ����ֵ�ͬһ��ʱ��PQP ֱ�Ӵ������м�ǿ�Ʒֿ�
+		// 所有三角形都被分到同一侧时，PQP 直接从数量中间强制分开
 		if (mid == begin || mid == end)
 		{
 			mid = begin + faceCount / 2;
@@ -284,7 +352,7 @@ namespace meshoffsetting
 		for (int i = begin; i < end; ++i)
 		{
 			int fid = _faceIndices[i];
-			const CFaceO& fi = _mesh.face[fid];
+			const CFaceO& fi = _mesh->face[fid];
 			for (int j = 0; j < fi.VN(); ++j)
 			{
 				const Point3m& p = fi.P(j);
@@ -311,7 +379,7 @@ namespace meshoffsetting
 		for (int i = begin; i < end; ++i)
 		{
 			int fid = _faceIndices[i];
-			const CFaceO& fi = _mesh.face[fid];
+			const CFaceO& fi = _mesh->face[fid];
 			for (int j = 0; j < fi.VN(); ++j)
 			{
 				const Point3m& p = fi.P(j);
@@ -337,17 +405,5 @@ namespace meshoffsetting
 			+ bound.axisV * min_coord[1]
 			+ bound.axisN * centerZ;
 		return bound;
-	}
-
-	Point3m SSVH::FaceCentroid(int fid)
-	{
-		auto& f = _mesh.face[fid];
-		Point3m center{ 0,0,0 };
-		for (int i = 0; i < f.VN(); ++i)
-		{
-			center += f.P(i);
-		}
-		center /= (Scalarm)(f.VN());
-		return center;
 	}
 }

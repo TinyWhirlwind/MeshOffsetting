@@ -12,17 +12,6 @@
 #include "UniformGrid.h"
 namespace meshoffsetting
 {
-    enum class ClosestFeature
-    {
-        Face,
-        EdgeAB,
-        EdgeBC,
-        EdgeCA,
-        VertexA,
-        VertexB,
-        VertexC
-    };
-
     class NarrowBandSDF
     {
         struct GridBlock
@@ -37,20 +26,32 @@ namespace meshoffsetting
     public:
         NarrowBandSDF(const CMeshO& mesh,const Scalarm offsetDistance, int nodeCount = 129, int blockWidth = 8);
         ~NarrowBandSDF() = default;
+        NarrowBandSDF(const NarrowBandSDF&) = delete;
+        NarrowBandSDF& operator=(const NarrowBandSDF&) = delete;
+        NarrowBandSDF(NarrowBandSDF&&) = delete;
+        NarrowBandSDF& operator=(NarrowBandSDF&&) = delete;
 
-        //²âÊÔ½Ó¿Ú
-        UniformGrid* GetGird();
+        Point3i GetGridSize() const;
+        Box3m GetGridBox() const;
+        Scalarm GetCellWidth() const;
+
+        bool TryGetNodeDistance(
+            const Point3i& node_id,
+            Scalarm& signed_distance) const;
+        bool EvaluateNodeDistance(
+            const Point3i& node_id,
+            Scalarm& signed_distance) const;
         bool QuerySignedDistance(
             const Point3m& query_point,
-            Scalarm& signed_distance);
+            Scalarm& signed_distance) const;
     private:
         void Build();
-		void CreateBlocks();
-        ClosestFeature ClassifyBarycentric(Scalarm u, Scalarm v);
-        void AngleWeightedPseudoNormal(CVertexO* v,Point3m& normal);
-        void AngleWeightedPseudoNormal(CFaceO* f,int edge_id, Point3m& normal);
-		void SubdivideBlock(const Point3i& min_node, const Point3i& max_node,int depth);
-        int CheckSign(ClosestPointResult query_result, Point3m center, bool& is_valid);
+        void CreateBlocks();
+        void InitializeActiveNodes();
+        void AngleWeightedPseudoNormal(CVertexO* v,Point3m& normal) const;
+        void AngleWeightedPseudoNormal(CFaceO* f,int edge_id, Point3m& normal) const;
+        void SubdivideBlock(const Point3i& min_node, const Point3i& max_node,int depth);
+        int CheckSign(const ClosestPointResult& query_result,const Point3m& center,bool& is_valid) const;
         bool IsBoxValidBySignedDistance(Scalarm signed_distance, Scalarm circumsphere_radius) const;
         void MarkNodeRangeInvalid(const Point3i& min_node, const Point3i& max_node);
 

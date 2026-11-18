@@ -12,26 +12,25 @@
 #include <limits>
 namespace meshoffsetting
 {
-	enum ClosestType
+	enum class ClosestFeature
 	{
-		Unknown = 0,
-		Face,//0
-		Edge,//01,12,02
-		Vertex//0,1,2
+		Unknown,
+		Face,
+		EdgeAB,
+		EdgeBC,
+		EdgeCA,
+		VertexA,
+		VertexB,
+		VertexC
 	};
 
 	struct ClosestPointResult
 	{
-		bool found = false;
 		int faceId = -1;
 		Point3m closest_point;
 		Scalarm unsigned_distance = std::numeric_limits<Scalarm>::max();
-		Scalarm u = 0.0;
-		Scalarm	v = 0.0;
-
-		/*ClosestType closestType = ClosestType::Unknown;
-		int closestFeature = -1;
-		bool intersected = false;*/
+		Scalarm unsigned_distance_squared = std::numeric_limits<Scalarm>::max();
+		ClosestFeature feature = ClosestFeature::Unknown;
 	};
 	
 	struct RSS
@@ -46,6 +45,14 @@ namespace meshoffsetting
 		Scalarm lengthU = 0;
 		Scalarm lengthV = 0;
 	};
+
+	struct CachedTriangle
+	{
+		Point3m a;
+		Point3m ab;
+		Point3m ac;
+	};
+
 	struct SSVHNode
 	{
 		RSS bound;
@@ -61,7 +68,7 @@ namespace meshoffsetting
 	public:
 		explicit SSVH(const CMeshO& mesh);
 		SSVH() = default;
-		~SSVH() = default;
+		void Initialize(const CMeshO& mesh);
 
 		ClosestPointResult QueryClosestPoint(const Point3m& q) const;
 		bool Empty() const;
@@ -70,15 +77,15 @@ namespace meshoffsetting
 		void Build();
 		void BuildNode(int nodeIndex, std::size_t begin, std::size_t end);
 		RSS FitRSS(std::size_t begin, std::size_t end, Point3m& mean);
-		Point3m FaceCentroid(int fid);
 		void QueryNode(int node_index, const Point3m& query_p, ClosestPointResult& result) const;
 		void UpdateClosestPointWithTriangle(int face_index, const Point3m& query_p, ClosestPointResult& result) const;
-		Scalarm DistanceToRSS(const Point3m& query_p, const RSS& bound) const;
+		Scalarm DistanceToRSSCoreSquared(const Point3m& query_p, const RSS& bound) const;
 	private:
 		int _root = -1;
-		CMeshO _mesh;
+		const CMeshO* _mesh = nullptr;
 		std::vector<SSVHNode> _nodes;
 		std::vector<int> _faceIndices;
+		std::vector<CachedTriangle> _triangles;
 	};
 }
 
