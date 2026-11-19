@@ -54,7 +54,7 @@ int main()
     Scalarm thickness = 0.02;
     int n_layer = (mesh.bbox.max.Z() - mesh.bbox.min.Z())/ thickness;
     auto start_time = std::chrono::steady_clock::now();
-    SlicerSDF sdf(mesh, 0,257);
+    SlicerSDF sdf(mesh, 0, 513);
     sdf.StartSlicerAll(n_layer, thickness);
     auto end_time = std::chrono::steady_clock::now();
     std::chrono::duration<double> elapsed_time = end_time - start_time;

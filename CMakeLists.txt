@@ -5,23 +5,30 @@ project(MeshOffsetting
 	LANGUAGES CXX
 )
 
+include(FetchContent)
+
 set(MESHOFFSET_SOURCES
 	MeshOffsetting/main.cpp
 	MeshOffsetting/src/SSVH.cpp
+	MeshOffsetting/src/FCPWClosestPointQuery.cpp
 	MeshOffsetting/src/CMeshO.cpp
 	MeshOffsetting/src/UniformGrid.cpp
 	MeshOffsetting/src/NarrowBandSDF.cpp
 	MeshOffsetting/src/SlicerSDF.cpp
+	MeshOffsetting/Test/Test.cpp
 )
 
 set(MESHOFFSET_HEADERS
 	MeshOffsetting/include/SSVH.h
+	MeshOffsetting/include/FCPWClosestPointQuery.h
 	MeshOffsetting/include/base_type.h
 	MeshOffsetting/include/CMeshO.h
 	MeshOffsetting/include/Tolerance.h
 	MeshOffsetting/include/UniformGrid.h
 	MeshOffsetting/include/NarrowBandSDF.h
 	MeshOffsetting/include/SlicerSDF.h
+	MeshOffsetting/FCPW/FCPWPointTriangleDistance.h
+	MeshOffsetting/Test/Test.h
 )
 
 add_executable(MeshOffset
@@ -38,7 +45,9 @@ source_group(
 
 target_include_directories(MeshOffset
 	PRIVATE
+		"${CMAKE_CURRENT_SOURCE_DIR}/MeshOffsetting"
 		"${CMAKE_CURRENT_SOURCE_DIR}/MeshOffsetting/include"
+		"${CMAKE_CURRENT_SOURCE_DIR}/MeshOffsetting/FCPW"
 )
 
 target_compile_features(MeshOffset PRIVATE cxx_std_20)
@@ -100,7 +109,6 @@ endif()
 else()
 	message(STATUS "Local VCGLib not found; downloading it")
 	
-	include(FetchContent)
 	set(VCG_HEADER_ONLY ON CACHE BOOL "" FORCE)
 	set(VCG_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
 	set(VCG_ALLOW_BUNDLED_EIGEN ON CACHE BOOL "" FORCE)
@@ -125,11 +133,31 @@ else()
 	)
 endif()
 
+set(FCPW_USE_ENOKI OFF CACHE BOOL "" FORCE)
+set(FCPW_USE_EIGHT_WIDE_BRANCHING OFF CACHE BOOL "" FORCE)
+set(FCPW_ENABLE_GPU_SUPPORT OFF CACHE BOOL "" FORCE)
+set(FCPW_BUILD_BINDINGS OFF CACHE BOOL "" FORCE)
+set(FCPW_BUILD_DEMO OFF CACHE BOOL "" FORCE)
+set(FCPW_BUILD_TESTS OFF CACHE BOOL "" FORCE)
+
+FetchContent_Declare(
+	meshoffset_fcpw_dependency
+	GIT_REPOSITORY https://github.com/rohan-sawhney/fcpw.git
+	GIT_TAG v1.2.0
+	GIT_SHALLOW TRUE
+	GIT_SUBMODULES ""
+	UPDATE_DISCONNECTED TRUE
+)
+
+FetchContent_MakeAvailable(meshoffset_fcpw_dependency)
+
 target_sources(MeshOffset PRIVATE "${VCGLIB_PLY_SOURCE}")
 source_group("Third Party" FILES "${VCGLIB_PLY_SOURCE}")
 
 target_link_libraries(MeshOffset
-	PRIVATE MeshOffsetting::VCGLib
+	PRIVATE
+		MeshOffsetting::VCGLib
+		fcpw
 )
 
 find_package(OpenMP QUIET)

@@ -6,6 +6,7 @@
 #include <cstddef>
 #include <exception>
 #include <stdexcept>
+#include <utility>
 
 #ifdef _OPENMP
 #include <omp.h>
@@ -25,18 +26,14 @@ namespace meshoffsetting
         _size_z = size.Z();
         if (_size_x < 2 || _size_y < 2 || _size_z < 2)
         {
-            throw std::invalid_argument(
-                "Each grid axis needs at least two nodes");
+            throw std::invalid_argument("Each grid axis needs at least two nodes");
         }
 
-        if (!std::isfinite(_cell_width)
-            || _cell_width <= 0
-            || !std::isfinite(_offset))
+        if (!std::isfinite(_cell_width) || _cell_width <= 0 || !std::isfinite(_offset))
         {
-            throw std::invalid_argument(
-                "Invalid cell width or offset");
+            throw std::invalid_argument("Invalid cell width or offset");
         }
-
+        _test.SetSize(_size_x, _size_y, _size_z);
     }
 
     void SlicerSDF::StartSlicerOne(int layer, Scalarm layer_thickness)
@@ -58,9 +55,9 @@ namespace meshoffsetting
 
     void SlicerSDF::StartSlicerAll(int layer_count, Scalarm layer_thickness)
     {
-        if (layer_count < 0 ||!std::isfinite(layer_thickness) || layer_thickness <= 0) {
-            throw std::invalid_argument(
-                "Invalid layer count or layer thickness");
+        if (layer_count < 0 ||!std::isfinite(layer_thickness) || layer_thickness <= 0) 
+        {
+            throw std::invalid_argument("Invalid layer count or layer thickness");
         }
         //_error_nodes.clear();
         Scalarm max_z =_bbox.min.Z() + (_size_z - 1) * _cell_width;
@@ -83,27 +80,18 @@ namespace meshoffsetting
             return;
         }
 
-        std::vector<std::vector<Point3m>> layer_errors(
-            slice_z_values.size());
-        std::atomic<bool> failed(false);
+        std::vector<std::vector<Point3m>> layer_errors(slice_z_values.size());
+        std::atomic<bool> failed(false);//å¤šçº¿ç¨‹ä¹‹é—´å…±äº«çŠ¶æ€,ä¸€ä¸ªçº¿ç¨‹å¤±è´¥ failedå°±ä¸ºtrue
         std::exception_ptr first_exception;
-
-        const int layer_total =
-            static_cast<int>(slice_z_values.size());
+        const int layer_total = static_cast<int>(slice_z_values.size());
         int worker_count = 1;
 #ifdef _OPENMP
         worker_count = std::max(1, omp_get_max_threads());
 #endif
         const int target_chunk_count = worker_count * 3;
-        const int chunk_size = std::max(
-            4,
-            (layer_total + target_chunk_count - 1) /
-                target_chunk_count);
-        const int chunk_count =
-            (layer_total + chunk_size - 1) / chunk_size;
-        const int active_worker_count = std::max(
-            1,
-            std::min(worker_count, chunk_count));
+        const int chunk_size = std::max(4,(layer_total + target_chunk_count - 1) /target_chunk_count);
+        const int chunk_count = (layer_total + chunk_size - 1) / chunk_size;
+        const int active_worker_count = std::max(1, std::min(worker_count, chunk_count));
 
 #pragma omp parallel num_threads(active_worker_count)
         {
@@ -173,10 +161,10 @@ namespace meshoffsetting
             std::rethrow_exception(first_exception);
         }
 
-        for (const std::vector<Point3m>& errors : layer_errors)
+        /*for (const std::vector<Point3m>& errors : layer_errors)
         {
-            //_error_nodes.insert(_error_nodes.end(), errors.begin(), errors.end());
-        }
+            _error_nodes.insert(_error_nodes.end(), errors.begin(), errors.end());
+        }*/
         _layers.swap(results);
     }
 
@@ -203,19 +191,11 @@ namespace meshoffsetting
     void SlicerSDF::InitializeWorkspace(
         LayerWorkspace& workspace) const
     {
-        workspace.plane_grid.values.assign(
-            _size_x,
-            std::vector<Scalarm>(_size_y, Scalarm(0)));
-        workspace.plane_grid.valid.assign(
-            _size_x,
-            std::vector<bool>(_size_y, false));
-        workspace.plane_grid.candidate_cells.assign(
-            _size_x - 1,
-            std::vector<bool>(_size_y - 1, false));
-
         const std::size_t plane_node_count =
-            static_cast<std::size_t>(_size_x) *
-            static_cast<std::size_t>(_size_y);
+            static_cast<std::size_t>(_size_x) * _size_y;
+        workspace.plane_grid.values.assign(plane_node_count, Scalarm(0));
+        workspace.plane_grid.valid.assign(plane_node_count, 0);
+
         workspace.lower_plane.values.assign(
             plane_node_count, Scalarm(0));
         workspace.lower_plane.states.assign(
@@ -434,12 +414,11 @@ namespace meshoffsetting
             return result;
         }
 
-        for (int x = 0; x + 1 < _size_x; x++)
+        for (std::size_t cell : workspace.plane_grid.candidate_cell_indices)
         {
-            for (int y = 0; y + 1 < _size_y; y++)
-            {
-                ProcessCell(x, y, result, workspace);
-            }
+            const int x = static_cast<int>(cell / (_size_y - 1));
+            const int y = static_cast<int>(cell % (_size_y - 1));
+            ProcessCell(x, y, result, workspace);
         }
         TraceContours(result, workspace);
         return result;
@@ -449,22 +428,9 @@ namespace meshoffsetting
         Scalarm zi,
         LayerWorkspace& workspace) const
     {
-        for (int x = 0; x < _size_x; x++)
-        {
-            for (int y = 0; y < _size_y; y++)
-            {
-                workspace.plane_grid.values[x][y] = 0;
-                workspace.plane_grid.valid[x][y] = false;
-            }
-        }
-
-        for (int x = 0; x + 1 < _size_x; ++x)
-        {
-            std::fill(
-                workspace.plane_grid.candidate_cells[x].begin(),
-                workspace.plane_grid.candidate_cells[x].end(),
-                false);
-        }
+        for (std::size_t index : workspace.plane_grid.touched_nodes)
+            workspace.plane_grid.valid[index] = 0;
+        workspace.plane_grid.touched_nodes.clear();
 
         int lower_z = 0;
         Scalarm weight = 0;
@@ -481,53 +447,38 @@ namespace meshoffsetting
             return false;
         }
 
-        for (int x = 0; x + 1 < _size_x; ++x)
+        PlaneField& field = workspace.plane_grid;
+        // NarrowBand membership is stable: support queries do not add candidates.
+        if (field.candidate_lower_z != lower_z ||
+            field.candidate_needs_upper != needs_upper)
         {
-            for (int y = 0; y + 1 < _size_y; ++y)
-            {
-                workspace.plane_grid.candidate_cells[x][y] =
-                    IsCandidateCell(
-                        x, y, needs_upper, workspace);
-            }
+            field.candidate_cell_indices.clear();
+            for (int x = 0; x + 1 < _size_x; ++x)
+                for (int y = 0; y + 1 < _size_y; ++y)
+                    if (IsCandidateCell(x, y, needs_upper, workspace))
+                        field.candidate_cell_indices.push_back(
+                            static_cast<std::size_t>(x) * (_size_y - 1) + y);
+            field.candidate_lower_z = lower_z;
+            field.candidate_needs_upper = needs_upper;
         }
 
-        for (int x = 0; x + 1 < _size_x; ++x)
+        // Interpolate only candidate corners, reusing shared nodes within a slice.
+        for (std::size_t cell : field.candidate_cell_indices)
         {
-            for (int y = 0; y + 1 < _size_y; ++y)
-            {
-                if (!workspace.plane_grid.candidate_cells[x][y])
+            const int x = static_cast<int>(cell / (_size_y - 1));
+            const int y = static_cast<int>(cell % (_size_y - 1));
+            for (int dx = 0; dx <= 1; ++dx)
+                for (int dy = 0; dy <= 1; ++dy)
                 {
-                    continue;
+                    const int nx = x + dx;
+                    const int ny = y + dy;
+                    if (field.valid[PlaneIndex(nx, ny)])
+                        continue;
+                    EnsurePlaneNodeDistance(nx, ny, workspace.lower_plane);
+                    if (needs_upper)
+                        EnsurePlaneNodeDistance(nx, ny, workspace.upper_plane);
+                    FillPlaneNode(nx, ny, weight, needs_upper, workspace);
                 }
-
-                for (int dx = 0; dx <= 1; ++dx)
-                {
-                    for (int dy = 0; dy <= 1; ++dy)
-                    {
-                        EnsurePlaneNodeDistance(
-                            x + dx,
-                            y + dy,
-                            workspace.lower_plane);
-
-                        if (needs_upper)
-                        {
-                            EnsurePlaneNodeDistance(
-                                x + dx,
-                                y + dy,
-                                workspace.upper_plane);
-                        }
-                    }
-                }
-            }
-        }
-
-        for (int x = 0; x < _size_x; x++)
-        {
-            for (int y = 0; y < _size_y; y++)
-            {
-                FillPlaneNode(
-                    x, y, weight, needs_upper, workspace);
-            }
         }
 
         return true;
@@ -540,7 +491,7 @@ namespace meshoffsetting
         bool needs_upper,
         LayerWorkspace& workspace) const
     {
-        if (workspace.plane_grid.valid[x][y])
+        if (workspace.plane_grid.valid[PlaneIndex(x, y)])
         {
             return true;
         }
@@ -573,8 +524,9 @@ namespace meshoffsetting
                 + upper_distance * weight;
         }
 
-        workspace.plane_grid.values[x][y] = distance - _offset;
-        workspace.plane_grid.valid[x][y] = true;
+        workspace.plane_grid.values[PlaneIndex(x, y)] = distance - _offset;
+        workspace.plane_grid.valid[PlaneIndex(x, y)] = true;
+        workspace.plane_grid.touched_nodes.push_back(index);
         return true;
     }
 
@@ -585,15 +537,15 @@ namespace meshoffsetting
         LayerWorkspace& workspace) const
     {
         /*
-            ¶¥µã±àºÅ£º
+            é¡¶ç‚¹ç¼–å·ï¼š
             0(x,y) -------- 3(x,y+1)
             |               |
             |               |
             1(x+1,y) ------ 2(x+1,y+1)
-            ±ß 0£º0 -> 1
-            ±ß 1£º1 -> 2
-            ±ß 2£º2 -> 3
-            ±ß 3£º3 -> 0
+            è¾¹ 0ï¼š0 -> 1
+            è¾¹ 1ï¼š1 -> 2
+            è¾¹ 2ï¼š2 -> 3
+            è¾¹ 3ï¼š3 -> 0
         */
         int xs[4] = { x, x + 1, x + 1, x };
         int ys[4] = { y, y, y + 1, y + 1 };
@@ -601,9 +553,9 @@ namespace meshoffsetting
         int valid_count = 0;
         for (int k = 0; k < 4; k++)
         {
-            if (workspace.plane_grid.valid[xs[k]][ys[k]])
+            if (workspace.plane_grid.valid[PlaneIndex(xs[k], ys[k])])
             {
-                values[k] = workspace.plane_grid.values[xs[k]][ys[k]];
+                values[k] = workspace.plane_grid.values[PlaneIndex(xs[k], ys[k])];
                 valid_count++;
             }
         }
@@ -736,10 +688,10 @@ namespace meshoffsetting
         if (found != workspace.crossing_ids.end()) {
             return found->second;
         }
-        Scalarm value_a = workspace.plane_grid.values[ax][ay];
-        Scalarm value_b = workspace.plane_grid.values[bx][by];
+        Scalarm value_a = workspace.plane_grid.values[PlaneIndex(ax, ay)];
+        Scalarm value_b = workspace.plane_grid.values[PlaneIndex(bx, by)];
 
-        // Í¬±ÈÀıËõ·Å²»¸Ä±ä²åÖµ±ÈÀı£¬±ÜÃâ²îÖµÒç³ö¡£
+        // åŒæ¯”ä¾‹ç¼©æ”¾ä¸æ”¹å˜æ’å€¼æ¯”ä¾‹ï¼Œé¿å…å·®å€¼æº¢å‡ºã€‚
         Scalarm scale = std::max(std::abs(value_a), std::abs(value_b));
         value_a = value_a / scale;
         value_b = value_b / scale;
@@ -813,7 +765,7 @@ namespace meshoffsetting
         LayerWorkspace& workspace) const
     {
         bool is_error = false;
-        // Ã¿¸ö½»µã±ØĞëÓĞÁ½¸öÁÚ¾Ó¡£
+        // æ¯ä¸ªäº¤ç‚¹å¿…é¡»æœ‰ä¸¤ä¸ªé‚»å±…ã€‚
         for (std::size_t i = 0; i < workspace.contour_nodes.size(); i++)
         {
             if (workspace.contour_nodes[i].neighbours.size() != 2)
@@ -857,8 +809,8 @@ namespace meshoffsetting
                 }
                 visited[current] = true;
                 const Point3m& point = workspace.contour_nodes[current].point;
-                // ÁãÖµÍø¸ñ¶¥µã¿ÉÄÜÈÃ¶à¸ö½»µã×ø±êÖØºÏ¡£
-                // ÏÈ±£ÁôÍ¼Á¬½Ó£¬Êä³öÊ±È¥µôÁ¬ĞøÖØ¸´×ø±ê¡£
+                // é›¶å€¼ç½‘æ ¼é¡¶ç‚¹å¯èƒ½è®©å¤šä¸ªäº¤ç‚¹åæ ‡é‡åˆã€‚
+                // å…ˆä¿ç•™å›¾è¿æ¥ï¼Œè¾“å‡ºæ—¶å»æ‰è¿ç»­é‡å¤åæ ‡ã€‚
                 if (contour.empty() ||!SamePoint(contour.back(), point))
                 {
                     contour.push_back(point);
@@ -882,7 +834,7 @@ namespace meshoffsetting
                 contour.pop_back();
             }
 
-            // È¥µôÍË»¯µÄµã»·¡¢Ïß»·
+            // å»æ‰é€€åŒ–çš„ç‚¹ç¯ã€çº¿ç¯
             if (!HasArea(contour))
             {
                 continue;

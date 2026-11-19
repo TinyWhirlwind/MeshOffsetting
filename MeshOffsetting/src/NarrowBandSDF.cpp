@@ -4,9 +4,14 @@
 #include <cmath>
 #include <cstddef>
 #include <stdexcept>
+
 namespace meshoffsetting
 {
-    NarrowBandSDF::NarrowBandSDF(const CMeshO& mesh, const Scalarm offsetDistance,int nodeCount, int blockWidth) :
+    NarrowBandSDF::NarrowBandSDF(
+        const CMeshO& mesh,
+        const Scalarm offsetDistance,
+        int nodeCount,
+        int blockWidth) :
         _offset_distance(offsetDistance),
         _mesh(mesh),
         _block_width(blockWidth)
@@ -20,21 +25,22 @@ namespace meshoffsetting
         {
             throw std::invalid_argument("NarrowBandSDF block width must be a positive power of two");
         }
-        if (!std::isfinite(offsetDistance))
+        if (!std::isfinite(_offset_distance))
         {
             throw std::invalid_argument("NarrowBandSDF offset distance must be finite");
         }
 
-        _mesh.updateBoxAndNormals();
-        _mesh.vert.EnableVFAdjacency();
-        _mesh.face.EnableVFAdjacency();
-        _mesh.face.EnableFFAdjacency();
-        vcg::tri::UpdateNormal<CMeshO>::PerFaceNormalized(_mesh);
-        vcg::tri::UpdateTopology<CMeshO>::VertexFace(_mesh);
-        vcg::tri::UpdateTopology<CMeshO>::FaceFace(_mesh);
+        vcg::tri::UpdateBounding<CMeshO>::Box(_mesh);
+        if (_mesh.fn > 0)
+        {
+            _mesh.face.EnableFFAdjacency();
+            vcg::tri::UpdateTopology<CMeshO>::FaceFace(_mesh);
+            vcg::tri::UpdateNormal<CMeshO>::PerFaceNormalized(_mesh);
+            vcg::tri::UpdateNormal<CMeshO>::PerVertexAngleWeighted(_mesh);
+        }
 
-        _ssvh.Initialize(_mesh);
-        _grid = UniformGrid(_mesh.bbox,offsetDistance,blockWidth,nodeCount);
+        _closest_point_query.Initialize(_mesh);
+        _grid = UniformGrid(_mesh.bbox, _offset_distance, _block_width, nodeCount);
         _cell_width = _grid.GetCellWidth();
         Build();
     }
@@ -83,7 +89,7 @@ namespace meshoffsetting
         const Point3m& query_point,
         Scalarm& signed_distance) const
     {
-        ClosestPointResult closest_point = _ssvh.QueryClosestPoint(query_point);
+        ClosestPointResult closest_point = _closest_point_query.QueryClosestPoint(query_point);
         bool is_valid = true;
         int sign = CheckSign(closest_point, query_point, is_valid);
         if (!is_valid || !std::isfinite(closest_point.unsigned_distance))
@@ -120,7 +126,7 @@ namespace meshoffsetting
         }
     }
 
-    void NarrowBandSDF::AngleWeightedPseudoNormal(CFaceO* f, int edge_id, Point3m& normal) const
+    void NarrowBandSDF::AngleWeightedPseudoNormal(const CFaceO* f, int edge_id, Point3m& normal) const
     {
         auto nf = f->FFp(edge_id);
         if (nf != f)
@@ -145,7 +151,7 @@ namespace meshoffsetting
         //Angle-weighted pseudonormal
         //根据查询点到网格的最近点，根据最近点的位置（点、边、面），采用三种法向，判断查询点在模型内部还是外部
         int sign = 0;
-        CFaceO* f = const_cast<CFaceO*>(&(_mesh.face[query_result.faceId]));
+        const CFaceO* f = &_mesh.face[query_result.faceId];
         Point3m nf(0., 0., 0.);
         ClosestFeature type = query_result.feature;
         switch (type)
@@ -207,7 +213,7 @@ namespace meshoffsetting
                     Point3m box_center = (_grid.NodePosition(child_min) + _grid.NodePosition(child_max)) / 2;
 
                     //判断sub_box的符号距离
-                    ClosestPointResult closest_point = _ssvh.QueryClosestPoint(box_center);
+                    ClosestPointResult closest_point = _closest_point_query.QueryClosestPoint(box_center);
                     bool query_ok = closest_point.faceId >= 0 && std::isfinite(closest_point.unsigned_distance);
                     if (!query_ok)
                     {
@@ -313,7 +319,7 @@ namespace meshoffsetting
                 }
 
                 Point3m node_pos = _grid.NodePosition(node_id);
-                ClosestPointResult closest_point = _ssvh.QueryClosestPoint(node_pos);
+                ClosestPointResult closest_point = _closest_point_query.QueryClosestPoint(node_pos);
                 bool is_valid = true;
                 int sign = CheckSign(closest_point, node_pos, is_valid);
                 if (!is_valid || !std::isfinite(closest_point.unsigned_distance))
@@ -387,7 +393,7 @@ namespace meshoffsetting
         for (std::ptrdiff_t block_index = 0; block_index < block_count; ++block_index)
         {
             GridBlock& cubic = _blocks[static_cast<std::size_t>(block_index)];
-            ClosestPointResult closest_point = _ssvh.QueryClosestPoint(cubic.center);
+            ClosestPointResult closest_point = _closest_point_query.QueryClosestPoint(cubic.center);
             //计算block中心点到网格的无符号距离场剔除不在窄带内的block
             bool query_ok = closest_point.faceId >= 0 && std::isfinite(closest_point.unsigned_distance);
             if (!query_ok)
@@ -445,12 +451,41 @@ namespace meshoffsetting
         int depth = 0;
         for (int size = _block_width; size > 1; size /= 2)
             ++depth;
-        for (const GridBlock& cubic : _blocks)
+        // Skip the final subdivision; remaining nodes are evaluated afterward.
+        if (depth > 0)
+            --depth;
+        if (depth == 0)
+            return;
+
+        // Adjacent blocks share boundary nodes. Process eight parity groups
+        // in sequence so parallel blocks never write the same node.
+        std::vector<std::size_t> groups[8];
+        for (std::size_t index = 0; index < _blocks.size(); ++index)
         {
+            const GridBlock& cubic = _blocks[index];
             if (!cubic.valid)
                 continue;
-			//递归细分,设置 Invalid grid nodes
-            SubdivideBlock(cubic.min_node, cubic.max_node, depth);
+            const int group =
+                ((cubic.min_node.X() / _block_width) & 1) |
+                (((cubic.min_node.Y() / _block_width) & 1) << 1) |
+                (((cubic.min_node.Z() / _block_width) & 1) << 2);
+            groups[group].push_back(index);
+        }
+
+#pragma omp parallel
+        {
+            for (int group = 0; group < 8; ++group)
+            {
+                const std::ptrdiff_t count =
+                    static_cast<std::ptrdiff_t>(groups[group].size());
+#pragma omp for schedule(guided, 1)
+                for (std::ptrdiff_t index = 0; index < count; ++index)
+                {
+                    const GridBlock& cubic = _blocks[groups[group][index]];
+                    SubdivideBlock(cubic.min_node, cubic.max_node, depth);
+                }
+                // The implicit barrier keeps neighboring groups apart.
+            }
         }
 
         // Valid node distances are computed once after all filters finish.

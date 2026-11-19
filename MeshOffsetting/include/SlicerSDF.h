@@ -1,4 +1,4 @@
-/**
+Ôªø/**
  * @file SlicerSDF.h
  * @author zhangpingping
  * @date 2026-11-12
@@ -9,6 +9,7 @@
 #define MESHOFFSETTING_SLICER_SDF_H
 
 #include "NarrowBandSDF.h"
+#include "Test/Test.h"
 namespace meshoffsetting
 {
 	struct SliceResult
@@ -33,14 +34,19 @@ namespace meshoffsetting
 		const std::vector<SliceResult>& GetLayers() const;
 
 
-		//≤‚ ‘
+		//ÊµãËØï
 		//const std::vector<Point3m>& GetErrorNode();
 	private:
 		struct PlaneField
 		{
-			std::vector<std::vector<Scalarm>> values;
-			std::vector<std::vector<bool>> valid;
-			std::vector<std::vector<bool>> candidate_cells;
+			// Flat node caches; only touched nodes are reset between slices.
+			std::vector<Scalarm> values;
+			std::vector<unsigned char> valid;
+			// Reuse candidates while the Z planes and interpolation mode match.
+			std::vector<std::size_t> candidate_cell_indices;
+			std::vector<std::size_t> touched_nodes;
+			int candidate_lower_z = -1;
+			bool candidate_needs_upper = false;
 		};
 
 		enum class PlaneNodeState : unsigned char
@@ -58,7 +64,7 @@ namespace meshoffsetting
 			std::vector<PlaneNodeState> states;
 		};
 
-		// ¬÷¿™Ωªµ„£¨≤ª «‘≠¿¥µƒÕ¯∏Ò≤…—˘Ω⁄µ„°£
+		// ËΩÆÂªì‰∫§ÁÇπÔºå‰∏çÊòØÂéüÊù•ÁöÑÁΩëÊ†ºÈááÊ†∑ËäÇÁÇπ„ÄÇ
 		struct ContourNode
 		{
 			Point3m point;
@@ -71,54 +77,30 @@ namespace meshoffsetting
 			DistancePlane upper_plane;
 			PlaneField plane_grid;
 			std::vector<ContourNode> contour_nodes;
-			// Õ¯∏Ò±ﬂ¡Ω∂Àµƒ∂•µ„ ID -> ¬÷¿™Ωªµ„ ID°£
+			// ÁΩëÊ†ºËæπ‰∏§Á´ØÁöÑÈ°∂ÁÇπ ID -> ËΩÆÂªì‰∫§ÁÇπ ID„ÄÇ
 			std::map<std::pair<std::size_t, std::size_t>, std::size_t> crossing_ids;
 			std::vector<Point3m> error_nodes;
 		};
 
 		void InitializeWorkspace(LayerWorkspace& workspace) const;
-		bool ComputeSlicePosition(
-			Scalarm zi,
-			int& lower_z,
-			Scalarm& weight,
-			bool& needs_upper) const;
+		bool ComputeSlicePosition(Scalarm zi, int& lower_z, Scalarm& weight, bool& needs_upper) const;
 		bool LoadDistancePlane(int z, DistancePlane& plane) const;
-		bool PrepareDistancePlanes(
-			int lower_z,
-			bool needs_upper,
-			LayerWorkspace& workspace) const;
-		bool IsCandidateCell(
-			int x,
-			int y,
-			bool needs_upper,
-			const LayerWorkspace& workspace) const;
-		bool EnsurePlaneNodeDistance(
-			int x,
-			int y,
-			DistancePlane& plane) const;
+		bool PrepareDistancePlanes(int lower_z,bool needs_upper,LayerWorkspace& workspace) const;
+		bool IsCandidateCell(int x,int y,bool needs_upper,const LayerWorkspace& workspace) const;
+		bool EnsurePlaneNodeDistance(int x,int y,DistancePlane& plane) const;
 		std::size_t PlaneIndex(int x, int y) const;
 		SliceResult SliceAtZImpl(Scalarm zi, LayerWorkspace& workspace) const;
 		bool BuildPlaneField(Scalarm zi, LayerWorkspace& workspace) const;
-		bool FillPlaneNode(
-			int x,
-			int y,
-			Scalarm weight,
-			bool needs_upper,
-			LayerWorkspace& workspace) const;
+		bool FillPlaneNode(int x,int y,Scalarm weight,bool needs_upper,LayerWorkspace& workspace) const;
 		void ProcessCell(int x, int y, SliceResult& result, LayerWorkspace& workspace) const;
-		std::size_t GetOrCreateCrossing(
-			int ax,
-			int ay,
-			int bx,
-			int by,
-			Scalarm zi,
-			LayerWorkspace& workspace) const;
+		std::size_t GetOrCreateCrossing(int ax,int ay,int bx,int by,Scalarm zi,LayerWorkspace& workspace) const;
 		void Connect(std::size_t a, std::size_t b, LayerWorkspace& workspace) const;
 		void TraceContours(SliceResult& result, LayerWorkspace& workspace) const;
 		static bool SamePoint(const Point3m& a, const Point3m& b);
 		static bool HasArea(const std::vector<Point3m>& contour);
 	private:
 		NarrowBandSDF _nsdf;
+		TestSlicer _test;
 
 		Scalarm _offset = 0.0;
 		Scalarm _cell_width = 0;

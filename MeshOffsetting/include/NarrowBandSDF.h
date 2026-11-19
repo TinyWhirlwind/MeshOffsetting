@@ -8,10 +8,11 @@
 #ifndef MESHOFFSETTING_NARROW_BAND_FILTER_H
 #define MESHOFFSETTING_NARROW_BAND_FILTER_H
 #include "CMeshO.h"
-#include "SSVH.h"
+#include "FCPWClosestPointQuery.h"
 #include "UniformGrid.h"
 namespace meshoffsetting
 {
+
     class NarrowBandSDF
     {
         struct GridBlock
@@ -49,7 +50,7 @@ namespace meshoffsetting
         void CreateBlocks();
         void InitializeActiveNodes();
         void AngleWeightedPseudoNormal(CVertexO* v,Point3m& normal) const;
-        void AngleWeightedPseudoNormal(CFaceO* f,int edge_id, Point3m& normal) const;
+        void AngleWeightedPseudoNormal(const CFaceO* f,int edge_id, Point3m& normal) const;
         void SubdivideBlock(const Point3i& min_node, const Point3i& max_node,int depth);
         int CheckSign(const ClosestPointResult& query_result,const Point3m& center,bool& is_valid) const;
         bool IsBoxValidBySignedDistance(Scalarm signed_distance, Scalarm circumsphere_radius) const;
@@ -68,7 +69,7 @@ namespace meshoffsetting
         Scalarm _block_circumsphere_radius = 0;
         std::vector<GridBlock> _blocks;
 
-        SSVH _ssvh;
+        FCPWClosestPointQuery _closest_point_query;
         UniformGrid _grid;
     };
 }
